@@ -1,2 +1,2 @@
-# CTE_deseq2
-Work on running DESeq2 on CTE data. 
+# 
+R code used for running CTE analysis during internship
