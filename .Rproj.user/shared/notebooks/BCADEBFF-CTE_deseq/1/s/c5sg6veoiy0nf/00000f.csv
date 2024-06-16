@@ -1,0 +1,7 @@
+"0","#Sorts Core_ID alphabetically"
+"0","merged_meta <- merged_meta[order(merged_meta[[""Core_ID""]]), ]"
+"0","#Sets Core_ID to row names for deseq2 #rownames(merged_meta) <- merged_meta$Core_ID"
+"0",""
+"0","#AT8log"
+"0","merged_meta$AT8sulcusLog <- log(merged_meta$AT8sulcus)"
+"0","merged_meta$AT8crestLog <- log(merged_meta$AT8crest)"

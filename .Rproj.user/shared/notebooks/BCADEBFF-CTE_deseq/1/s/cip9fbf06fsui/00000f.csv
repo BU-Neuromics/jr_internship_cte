@@ -1,0 +1,8 @@
+"0","#Sets counts gene names (X) to row names, then removing that column"
+"0","rownames(counts) <- counts$X"
+"0","counts <- subset(counts, select = -X)"
+"0","#Filters out gene names that have 150 or more zeros"
+"0","ltohf_genes <- rowSums(counts == 0) < 150"
+"0","filtered_counts <- counts[ltohf_genes,]"
+"0","#Sorts column names alphabetically to align with "
+"0","filtered_counts <- filtered_counts[, order(names(filtered_counts))]"

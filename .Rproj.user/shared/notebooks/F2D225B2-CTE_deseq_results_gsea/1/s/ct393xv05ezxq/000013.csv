@@ -1,0 +1,6 @@
+"0","for (i in all_obj_names) {
+  rownames(all_results[[i]]) <- gsub(""\\.\\d+$"", """", all_results[[i]]$rownames)
+}
+"
+"2","Error in `.rowNamesDF<-`(x, value = value) : invalid 'row.names' length
+"

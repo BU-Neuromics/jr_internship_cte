@@ -1,0 +1,163 @@
+"0","library(haven)"
+"0","library(readxl)"
+"0","library(DESeq2)"
+"2","Loading required package: S4Vectors
+"
+"2","Loading required package: stats4
+"
+"2","Loading required package: BiocGenerics
+"
+"2","
+Attaching package: ‘BiocGenerics’
+
+"
+"2","The following objects are masked from ‘package:stats’:
+
+    IQR, mad, sd, var, xtabs
+
+"
+"2","The following objects are masked from ‘package:base’:
+
+    anyDuplicated, append, as.data.frame, basename, cbind, colnames, dirname, do.call, duplicated, eval,
+    evalq, Filter, Find, get, grep, grepl, intersect, is.unsorted, lapply, Map, mapply, match, mget,
+    order, paste, pmax, pmax.int, pmin, pmin.int, Position, rank, rbind, Reduce, rownames, sapply,
+    setdiff, sort, table, tapply, union, unique, unsplit, which.max, which.min
+
+"
+"2","
+Attaching package: ‘S4Vectors’
+
+"
+"2","The following objects are masked from ‘package:base’:
+
+    expand.grid, I, unname
+
+"
+"2","Loading required package: IRanges
+"
+"2","Loading required package: GenomicRanges
+"
+"2","Loading required package: GenomeInfoDb
+"
+"2","Loading required package: SummarizedExperiment
+"
+"2","Loading required package: MatrixGenerics
+"
+"2","Loading required package: matrixStats
+"
+"2","
+Attaching package: ‘MatrixGenerics’
+
+"
+"2","The following objects are masked from ‘package:matrixStats’:
+
+    colAlls, colAnyNAs, colAnys, colAvgsPerRowSet, colCollapse, colCounts, colCummaxs, colCummins,
+    colCumprods, colCumsums, colDiffs, colIQRDiffs, colIQRs, colLogSumExps, colMadDiffs, colMads,
+    colMaxs, colMeans2, colMedians, colMins, colOrderStats, colProds, colQuantiles, colRanges, colRanks,
+    colSdDiffs, colSds, colSums2, colTabulates, colVarDiffs, colVars, colWeightedMads, colWeightedMeans,
+    colWeightedMedians, colWeightedSds, colWeightedVars, rowAlls, rowAnyNAs, rowAnys, rowAvgsPerColSet,
+    rowCollapse, rowCounts, rowCummaxs, rowCummins, rowCumprods, rowCumsums, rowDiffs, rowIQRDiffs,
+    rowIQRs, rowLogSumExps, rowMadDiffs, rowMads, rowMaxs, rowMeans2, rowMedians, rowMins, rowOrderStats,
+    rowProds, rowQuantiles, rowRanges, rowRanks, rowSdDiffs, rowSds, rowSums2, rowTabulates, rowVarDiffs,
+    rowVars, rowWeightedMads, rowWeightedMeans, rowWeightedMedians, rowWeightedSds, rowWeightedVars
+
+"
+"2","Loading required package: Biobase
+"
+"2","Welcome to Bioconductor
+
+    Vignettes contain introductory material; view with 'browseVignettes()'. To cite Bioconductor, see
+    'citation(""Biobase"")', and for packages 'citation(""pkgname"")'.
+
+"
+"2","
+Attaching package: ‘Biobase’
+
+"
+"2","The following object is masked from ‘package:MatrixGenerics’:
+
+    rowMedians
+
+"
+"2","The following objects are masked from ‘package:matrixStats’:
+
+    anyMissing, rowMedians
+
+"
+"0","library(dplyr)"
+"2","
+Attaching package: ‘dplyr’
+
+"
+"2","The following object is masked from ‘package:Biobase’:
+
+    combine
+
+"
+"2","The following object is masked from ‘package:matrixStats’:
+
+    count
+
+"
+"2","The following objects are masked from ‘package:GenomicRanges’:
+
+    intersect, setdiff, union
+
+"
+"2","The following object is masked from ‘package:GenomeInfoDb’:
+
+    intersect
+
+"
+"2","The following objects are masked from ‘package:IRanges’:
+
+    collapse, desc, intersect, setdiff, slice, union
+
+"
+"2","The following objects are masked from ‘package:S4Vectors’:
+
+    first, intersect, rename, setdiff, setequal, union
+
+"
+"2","The following objects are masked from ‘package:BiocGenerics’:
+
+    combine, intersect, setdiff, union
+
+"
+"2","The following objects are masked from ‘package:stats’:
+
+    filter, lag
+
+"
+"2","The following objects are masked from ‘package:base’:
+
+    intersect, setdiff, setequal, union
+
+"
+"0","library(ggplot2)"
+"0","spss_meta <- read_sav(""/restricted/projectnb/cteseq/projects/CTE_data_processing/09.28.2023_dataset/CTE RNAseq phenotype data.sav"")"
+"0","csv_meta <- read.csv(""/restricted/projectnb/cteseq/projects/CTE_data_processing/all_meta.csv"")"
+"0","counts <- read.csv(""/restricted/projectnb/cteseq/projects/CTE_data_processing/all_counts.csv"")"
+"0","AT8_ex_data <- read.csv(""/restricted/projectnb/cteseq/jrose/cte_DLFCWSAT8.csv"")[ ,2:3]"
+"0","cte_missing_data <- read_excel(""/restricted/projectnb/cteseq/projects/CTE_data_processing/09.28.2023_dataset/CTE CASES FOR MISSING APOE AND TMEM.xlsx"")"
+"2","New names:"
+"0","#Fixes a mismatched sample name"
+"0","spss_meta$subjid <- gsub(""BVAX81"", ""BVAX081"", spss_meta$subjid)"
+"0","#Changes format to match other rs value"
+"0","spss_meta$rs3173615 <- gsub(""C"", ""C:C"", spss_meta$rs3173615)"
+"0","spss_meta$rs3173615 <- gsub(""G"", ""G:G"", spss_meta$rs3173615)"
+"0","spss_meta$rs3173615 <- gsub(""C:CG:G"", ""C:G"", spss_meta$rs3173615)"
+"0","#renamed for ease of merging"
+"0","colnames(cte_missing_data)[1] = ""subjid"""
+"0","colnames(cte_missing_data)[2] = ""apoe"""
+"0","colnames(cte_missing_data)[3] = ""rs3173615"""
+"0","#Merge cte_missing_data into spss_meta file."
+"0","spss_merged <- merge(spss_meta, cte_missing_data, by = ""subjid"", all.x = TRUE)"
+"0","spss_merged$rs3173615 <- ifelse(spss_merged$rs3173615.x == """" & spss_merged$rs3173615.y != """", spss_merged$rs3173615.y, spss_merged$rs3173615.x)"
+"0","spss_merged$apoe <- ifelse(is.na(spss_merged$apoe.x) & spss_merged$apoe.y != """", spss_merged$apoe.y, spss_merged$apoe.x)"
+"0","spss_merged <- subset(spss_merged, select = -c(apoe.x, apoe.y, rs3173615.x, rs3173615.y))"
+"0","#Merge in additional AT8 data"
+"0","AT8_ex_data$subjid <- gsub(""K"", ""K-"", AT8_ex_data$subjid)"
+"0","AT8_ex_data$subjid <- gsub(""SLI"", ""SLI-"", AT8_ex_data$subjid)"
+"0","AT8_ex_data$subjid <- gsub(""SLI-0"", ""SLI-"", AT8_ex_data$subjid)"
+"0","spss_merged <- merge(spss_merged, AT8_ex_data, by = ""subjid"")"

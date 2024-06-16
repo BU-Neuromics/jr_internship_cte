@@ -1,0 +1,8 @@
+"0","group_low_deseq <- readRDS(""/restricted/projectnb/cteseq/jrose/cte_deseq_output_group_AT8total_low.rds"")"
+"0","group_high_deseq <- readRDS(""/restricted/projectnb/cteseq/jrose/cte_deseq_output_group_AT8total_high.rds"")"
+"0",""
+"0","group_low_deseq_2018 <- readRDS(""/restricted/projectnb/cteseq/jrose/cte_deseq_output_group_AT8total_2018_low.rds"")"
+"0","group_high_deseq_2018 <- readRDS(""/restricted/projectnb/cteseq/jrose/cte_deseq_output_group_AT8total_2018_high.rds"")"
+"0",""
+"0","group_low_deseq_2021 <- readRDS(""/restricted/projectnb/cteseq/jrose/cte_deseq_output_group_AT8total_2021_low.rds"")"
+"0","group_high_deseq_2021 <- readRDS(""/restricted/projectnb/cteseq/jrose/cte_deseq_output_group_AT8total_2021_high.rds"")"

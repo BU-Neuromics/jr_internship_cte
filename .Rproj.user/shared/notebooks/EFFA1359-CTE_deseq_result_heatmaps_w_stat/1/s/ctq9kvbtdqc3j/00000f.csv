@@ -1,0 +1,44 @@
+"0","all_results_sig_05 <- lapply(
+  all_obj_names,
+  function(result_name) {
+    results_c <- results(all_deseq_obj[[result_name]])
+    results_sig <- subset(results_c, padj < 0.05)
+    results_sig <- results_sig[order(results_sig$pvalue), ]
+    return(results_sig)
+    })
+names(all_results_sig_05) <- all_obj_names  
+
+heatmap_list <- lapply(
+  all_obj_names,
+  function(design_factor) {
+    design_res <- all_results_sig_05[[design_factor]]
+    design_df <- data.frame(design_res)
+    design_genes <- data.frame(ENSGID = rownames(design_df), design_factor = design_df$stat)
+    merged_values <- merge(results_combined, design_genes, by=""ENSGID"")
+    rownames(merged_values) <- merged_values[,""ENSGID""]
+    merged_values <- subset(merged_values, select = -design_factor)
+    merged_values <- subset(merged_values, select = -ENSGID)
+  })
+names(heatmap_list) <- all_obj_names 
+
+#Removes dots in ENSGID IDs
+for (i in all_obj_names) {
+  rownames(heatmap_list[[i]]) <- gsub(""\\.\\d+$"", """", rownames(heatmap_list[[i]]))
+}
+#Converts ENSGIDs to gene symbols using map
+for (i in seq_along(heatmap_list)) {
+  heatmap_list[[i]]$rownames <- rownames(heatmap_list[[i]])
+  heatmap_list[[i]] <- merge(heatmap_list[[i]], gene_map, by.x =""rownames"", by.y =""ensembl_gene_id"", all.x = TRUE)
+  heatmap_list[[i]] <- heatmap_list[[i]][complete.cases(heatmap_list[[i]]$external_gene_name) & heatmap_list[[i]]$external_gene_name != """", ]
+  rownames(heatmap_list[[i]]) <- make.unique(as.character(heatmap_list[[i]]$external_gene_name))
+  heatmap_list[[i]] <- subset(heatmap_list[[i]], select = -c( rownames, external_gene_name))
+}
+
+for (i in seq_along(heatmap_list)){
+  heatmap_list <- Filter(function(i) nrow(i) > 1, heatmap_list)
+}
+filtered_names <- names(heatmap_list)
+```
+"
+"2","Error: attempt to use zero-length variable name
+"

@@ -1,0 +1,52 @@
+---
+title: "DeTREM_CTE_heatmaps"
+output: html_document
+date: "2024-03-10"
+---
+
+```{r}
+library(dplyr)
+library(pheatmap)
+library(ggplot2)
+library(haven)
+
+
+deconv_all <- readRDS("DeTREM_CTE_estimates_all.rds")
+merged_meta <- readRDS("meta_file_only_for_DeTREM_sample_ref.rds")
+weighted_estimates <- data.frame(deconv_all$Est.prop.weighted)
+weighted_estimates$Core_ID <- rownames(weighted_estimates)
+deconv_all_anno <- merge(weighted_estimates, merged_meta[,c("Year", "CTEStage", "Core_ID")], by = "Core_ID", all.x = TRUE)
+rownames(deconv_all_anno) <- deconv_all_anno$Core_ID
+deconv_all_anno <- subset(deconv_all_anno, select = -c(Core_ID))
+
+#deconv_all_anno <- subset(deconv_all_anno, !is.na(deconv_all_anno$CTEStage))
+
+to_heatmap <- deconv_all_anno[,1:9]
+annotation = data.frame(
+                    CTE_Stage = factor(deconv_all_anno$CTEStage),
+                  Year = deconv_all_anno$Year
+                )
+rownames(annotation) = rownames(deconv_all_anno)
+
+
+
+cte_deconv_all_plot <- pheatmap(to_heatmap,
+        annotation_row = annotation,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         fontsize = 5, 
+         fontsize_col = 5,
+         cellwidth = 30,  
+         cellheight = 1,
+        treeheight_row = 10,
+        treeheight_col = 10,
+        angle_col = 315,
+        main = "DeTREM-Estimated Cell Type Distribution on CTE Data"
+)
+
+pdf("cte_deconv_all_plot.pdf")
+cte_deconv_all_plot
+dev.off()
+
+
+```

@@ -1,0 +1,124 @@
+---
+title: "Untitled"
+output: html_document
+date: "2024-01-10"
+---
+
+```{r}
+categorical_deseq_results <- readRDS("/restricted/projectnb/cteseq/jrose/cte_deseq_output_cat_binary.rds")
+continuous_deseq_results <- readRDS("/restricted/projectnb/cteseq/jrose/cte_deseq_output_cont.rds")
+```
+
+```{r, echo=FALSE}
+library(DESeq2)
+library(dplyr)
+library(biomaRt)
+library(tidyverse)
+library(corrplot)
+library(gt)
+
+all_deseq_obj <- c(continuous_deseq_results, categorical_deseq_results)
+all_obj_names <- names(all_deseq_obj)
+```
+
+```{r}
+all_results_cleaned <- lapply(
+  all_obj_names,
+  function(result_name) {
+    results_c <- results(all_deseq_obj[[result_name]])
+    results_sig <- subset(results_c, padj < 0.05)
+    results_sig <- results_sig[order(results_sig$pvalue), ]
+    factor_df <- data.frame(ENSGID = rownames(results_sig), baseMean = results_sig$baseMean, log2FoldChange = results_sig$log2FoldChange, lfcSE = results_sig$lfcSE, stat = results_sig$stat, pvalue = results_sig$pvalue, padj = results_sig$padj)
+    return(factor_df)
+    })
+names(all_results_cleaned) <- all_obj_names
+
+#Removes dots in ENSGID IDs
+for (i in all_obj_names) {
+  all_results_cleaned[[i]]$ENSGID <- gsub("\\.\\d+$", "", all_results_cleaned[[i]]$ENSGID)
+}
+
+#Converts ENSGIDs to gene symbols using map
+for (i in seq_along(all_results_cleaned)) {
+  all_results_cleaned[[i]]$rownames <- rownames(all_results_cleaned[[i]])
+  all_results_cleaned[[i]] <- merge(all_results_cleaned[[i]], gene_map, by.x ="rownames", by.y ="ensembl_gene_id", all.x = TRUE)
+  all_results_cleaned[[i]] <- all_results_cleaned[[i]][complete.cases(all_results_cleaned[[i]]$external_gene_name) & all_results_cleaned[[i]]$external_gene_name != "", ]
+  rownames(all_results_cleaned[[i]]) <- make.unique(as.character(all_results_cleaned[[i]]$external_gene_name))
+  all_results_cleaned[[i]] <- subset(all_results_cleaned[[i]], select = -c( rownames, external_gene_name))
+}
+
+```
+A list of unique genes represented in at least one factor by significance. 16157 genes @ 0.05, and 20250 genes @ 0.1
+Used to filter out underpresented genes 
+```{r}
+all_results_sig <- lapply(
+  all_obj_names,
+  function(result_name) {
+    results_c <- results(all_deseq_obj[[result_name]])
+    results_sig <- subset(results_c, padj < 0.05)
+    results_sig <- results_sig[order(results_sig$pvalue), ]
+    genes <- data.frame(ENSGID = rownames(results_sig), result_name = results_sig$padj)
+    colnames(genes)[2] <- result_name
+    return(genes)
+    })
+#assigns names to each result object
+names(all_results_sig) <- all_obj_names
+#uses tidyverse to reduce list of DF to one, joining by ENSGID
+results_combined <- all_results_sig %>% reduce(full_join, by="ENSGID")
+#assign rownames 
+rownames(results_combined) <- results_combined$ENSGID
+#Making a gene map and assigning symbols to all_results_sig
+gene_ids_sig <- unique(unlist(lapply(
+  all_results_sig,
+  function(i)
+    i$ENSGID
+)))
+```
+Can be used to make tibbles of the result objects from above block
+```{r}
+lapply(
+  all_obj_names,
+  function(result_name) {
+    assign(result_name, as_tibble(all_results_sig[[result_name]], rownames = "ENSGID"), envir = .GlobalEnv)})
+```
+makes dataframes in a similar format to deseq2 result objects, but only includes genes that are significantly represented in at least 1 design factor
+```{r}
+all_results_df <- lapply(
+  all_obj_names,
+  function(result_name) {
+    results_c <- results(all_deseq_obj[[result_name]])
+    factor_df <- data.frame(ENSGID = rownames(results_c), baseMean = results_c$baseMean, log2FoldChange = results_c$log2FoldChange, lfcSE = results_c$lfcSE, stat = results_c$stat, pvalue = results_c$pvalue, padj = results_c$padj)
+    factor_df <- factor_df[order(factor_df$stat), ]
+    factor_df <- factor_df[factor_df$ENSGID %in% gene_ids_sig,]
+    return(factor_df)
+    })
+names(all_results_df) <- all_obj_names
+```
+
+```{r}
+all_results_df_test <- lapply(
+  all_obj_names,
+  function(result_name) {
+    results_c <- results(all_deseq_obj[[result_name]])
+    factor_df <- data.frame(ENSGID = rownames(results_c), result_name = results_c$log2FoldChange)
+    colnames(factor_df)[2] <- result_name
+    factor_df <- factor_df[factor_df$ENSGID %in% gene_ids_sig,]
+    return(factor_df)
+    })
+names(all_results_df_test) <- all_obj_names
+
+
+results_combined_test <- all_results_df_test %>% reduce(full_join, by="ENSGID")
+rownames(results_combined_test) <- results_combined_test$ENSGID
+results_combined_test <- subset(results_combined_test, select = -c(ENSGID))
+
+
+
+cor_test <- cor(results_combined_test)
+cor_table <- gt(as.data.frame(cor_test, rownames = TRUE), rownames_to_stub = TRUE)
+corrplot(cor_test, order = 'alphabet', tl.cex = 0.8, number.cex = 0.5)
+#cl.cex for color labels
+```
+
+
+

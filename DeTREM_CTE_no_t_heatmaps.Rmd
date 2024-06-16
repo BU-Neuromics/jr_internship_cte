@@ -1,0 +1,133 @@
+---
+title: "DeTREM_CTE_heatmaps"
+output: html_document
+date: "2024-03-10"
+---
+
+```{r}
+library(dplyr)
+library(pheatmap)
+library(ggplot2)
+library(haven)
+library(gridExtra)
+
+deconv_all <- readRDS("DeTREM_CTE_estimates_all_no_t.rds")
+merged_meta <- readRDS("meta_file_only_for_DeTREM_sample_ref.rds")
+weighted_estimates <- data.frame(deconv_all$Est.prop.weighted)
+weighted_estimates$Core_ID <- rownames(weighted_estimates)
+deconv_all_anno <- merge(weighted_estimates, merged_meta[,c("Year", "CTEStage", "Core_ID")], by = "Core_ID", all.x = TRUE)
+rownames(deconv_all_anno) <- deconv_all_anno$Core_ID
+deconv_all_anno <- subset(deconv_all_anno, select = -c(Core_ID))
+
+#deconv_all_anno <- subset(deconv_all_anno, !is.na(deconv_all_anno$CTEStage))
+
+to_heatmap <- deconv_all_anno[,1:8]
+annotation = data.frame(
+                    CTE_Stage = factor(deconv_all_anno$CTEStage),
+                  Year = deconv_all_anno$Year
+                )
+rownames(annotation) = rownames(deconv_all_anno)
+```
+
+```{r}
+deconv_cte <- readRDS("DeTREM_CTE_estimates_cte.rds")
+deconv_rhi <- readRDS("DeTREM_CTE_estimates_rhi.rds")
+
+merged_meta <- readRDS("meta_file_only_for_DeTREM_sample_ref.rds")
+
+weighted_estimates_cte <- data.frame(deconv_cte$Est.prop.weighted)
+weighted_estimates_rhi <- data.frame(deconv_rhi$Est.prop.weighted)
+
+weighted_estimates_cte$Core_ID <- rownames(weighted_estimates_cte)
+weighted_estimates_rhi$Core_ID <- rownames(weighted_estimates_rhi)
+
+deconv_cte_anno <- merge(weighted_estimates_cte, merged_meta[,c("Year", "CTEStage", "Core_ID")], by = "Core_ID", all.x = TRUE)
+rownames(deconv_cte_anno) <- deconv_cte_anno$Core_ID
+deconv_rhi_anno <- merge(weighted_estimates_rhi, merged_meta[,c("Year", "CTEStage", "Core_ID")], by = "Core_ID", all.x = TRUE)
+rownames(deconv_rhi_anno) <- deconv_rhi_anno$Core_ID
+
+deconv_cte_anno <- subset(deconv_cte_anno, select = -c(Core_ID))
+deconv_rhi_anno <- subset(deconv_rhi_anno, select = -c(Core_ID))
+
+#deconv_cte_anno <- subset(deconv_cte_anno, !is.na(deconv_cte_anno$CTEStage))
+
+to_heatmap_cte <- deconv_cte_anno[,1:8]
+annotation_cte = data.frame(
+                    CTE_Stage = factor(deconv_cte_anno$CTEStage),
+                  Year = deconv_cte_anno$Year
+                )
+rownames(annotation_cte) = rownames(deconv_cte_anno)
+to_heatmap_rhi <- deconv_rhi_anno[,1:8]
+annotation_rhi = data.frame(
+                    CTE_Stage = factor(deconv_rhi_anno$CTEStage),
+                  Year = deconv_rhi_anno$Year
+                )
+rownames(annotation_rhi) = rownames(deconv_rhi_anno)
+```
+
+
+```{r}
+cte_deconv_all_plot_no_t <- pheatmap(to_heatmap,
+        annotation_row = annotation,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         fontsize = 5, 
+         fontsize_col = 5,
+         cellwidth = 30,  
+         cellheight = 1,
+        treeheight_row = 10,
+        treeheight_col = 10,
+        angle_col = 315,
+        main = "Cell Type Distribution on CTE Data (RHI + CTE ref samples only) Without T Cells"
+)
+
+
+cte_deconv_all_plot_no_t
+#pdf("cte_deconv_all_plot_no_t.pdf")
+#dev.off()
+
+cte_deconv_cte_plot_no_t <- pheatmap(to_heatmap_cte,
+        annotation_row = annotation_cte,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         fontsize = 5, 
+         fontsize_col = 5,
+         cellwidth = 30,  
+         cellheight = 1,
+        treeheight_row = 10,
+        treeheight_col = 10,
+        angle_col = 315,
+        main = "Cell Type Distribution on CTE Data (CTE ref samples only) Without T Cells"
+)
+
+cte_deconv_cte_plot_no_t
+#pdf("cte_deconv_cte_plot_no_t.pdf")
+#dev.off()
+
+cte_deconv_rhi_plot_no_t <- pheatmap(to_heatmap_rhi,
+        annotation_row = annotation_rhi,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         fontsize = 5, 
+         fontsize_col = 5,
+         cellwidth = 30,  
+         cellheight = 1,
+        treeheight_row = 10,
+        treeheight_col = 10,
+        angle_col = 315,
+        main = "Cell Type Distribution on CTE Data (RHI ref samples only) Without T Cells"
+)
+
+
+cte_deconv_rhi_plot_no_t
+#pdf("cte_deconv_rhi_plot_no_t.pdf")
+#dev.off()
+
+
+```
+```{r}
+
+
+```
+
+

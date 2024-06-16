@@ -1,0 +1,98 @@
+---
+title: 
+output: html_document
+date: 
+---
+
+```{r}
+library(GSEABase)
+
+categorical_deseq_results <- readRDS("/restricted/projectnb/cteseq/jrose/cte_deseq_output_cat_binary.rds")
+continuous_deseq_results <- readRDS("/restricted/projectnb/cteseq/jrose/cte_deseq_output_cont.rds")
+gmt_file <- getGmt("/restricted/projectnb/cteseq/jrose/c2.all.v2023.2.Hs.symbols.gmt")
+```
+
+```{r, echo=FALSE}
+library(DESeq2)
+library(dplyr)
+library(biomaRt)
+library(tidyverse)
+library(pheatmap)
+library(fgsea)
+library(ggplot2)
+library(data.table)
+
+all_deseq_obj <- c(continuous_deseq_results, categorical_deseq_results)
+all_obj_names <- names(all_deseq_obj)
+```
+Mapping gene symbols to all results, and only leaving those along with pval and l2fc (for ranking)
+```{r}
+#Obtain result from each deseq object
+all_results <- lapply(
+  all_obj_names,
+  function(result_name) {
+    results_c <- results(all_deseq_obj[[result_name]])
+    results_c <- results_c[order(results_c$pvalue), ]
+    l2fc_genes_test <- data.frame(ENSGID = rownames(results_c), log2FoldChange = results_c$log2FoldChange, pval = results_c$pvalue)
+    return(l2fc_genes_test)
+    })
+names(all_results) <- all_obj_names
+#uses tidyverse to reduce list of DF to one, joining by ENSGID
+results_combined <- all_results %>% reduce(full_join, by="ENSGID")
+#assign rownames 
+rownames(results_combined) <- results_combined$ENSGID
+#removes ENSGID col
+#results_combined <- results_combined[,-1]
+
+#Making a gene map and assigning symbols to all_results
+gene_ids <- unique(unlist(lapply(
+  all_results,
+  function(i)
+    i$ENSGID
+)))
+#removes the dot and numbers after from all ensg IDs
+cleaned_gene_ids <- sub("\\..*$", "", gene_ids)
+#Creates a mart object for creating the gene map.
+ensembl.con <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl")
+
+gene_map <- getBM(attributes = c("ensembl_gene_id", "external_gene_name"),
+      filters = "ensembl_gene_id",
+      values = cleaned_gene_ids,
+      mart = ensembl.con)
+#all genes represented in gene symbols
+all_genes <- gene_map$external_gene_name
+
+#Removes dots in ENSGID IDs
+for (i in all_obj_names) {
+  all_results[[i]]$ENSGID <- gsub("\\.\\d+$", "", all_results[[i]]$ENSGID)
+}
+#Converts ENSGIDs to gene symbols using map
+for (i in seq_along(all_results)) {
+  all_results[[i]] <- merge(all_results[[i]], gene_map, by.x ="ENSGID", by.y ="ensembl_gene_id", all.x = TRUE)
+  #all_results[[i]] <- all_results[[i]][complete.cases(all_results[[i]]$external_gene_name) & all_results[[i]]$external_gene_name != "", ]
+  #rownames(all_results[[i]]) <- make.unique(as.character(all_results[[i]]$external_gene_name))
+  all_results[[i]] <- subset(all_results[[i]], select = -c(ENSGID))
+}
+
+#for (i in seq_along(all_results)){
+#  all_results <- Filter(function(i) nrow(i) > 1, all_results)
+#}
+#filtered_names <- names(all_results)
+```
+ranking each set
+```{r}
+for (i in seq_along(all_results)){
+  #all_results[[i]]$rank <- sign(all_results[[i]]$log2FoldChange)*(-log10(all_results[[i]]$pval))
+  all_results[[i]] <- all_results[[i]][, !(names(all_results[[i]]) %in% c("log2FoldChange", "pval"))]
+}
+
+```
+gsea
+```{r}
+all_genes
+
+```
+
+
+
+

@@ -1,0 +1,601 @@
+
+
+
+```{r, echo=FALSE}
+library(DESeq2)
+library(dplyr)
+library(biomaRt)
+library(tidyverse)
+library(pheatmap)
+library(fgsea)
+```
+
+```{r}
+synGO_gmt <- gmtPathways("/restricted/projectnb/cteseq/jrose/synGO.gmt")
+c2_gmt <- gmtPathways("/restricted/projectnb/cteseq/jrose/c2.cp.v2023.2.Hs.symbols.gmt")
+
+dds_ART<- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ART_model.rds")
+dds_ARTB <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTB_model.rds")
+dds_ARTY <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTY_model.rds")
+#dds_ARTBY <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTBY_model.rds")
+dds_ARTB_2018 <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTB_2018_model.rds")
+dds_ARTB_2021 <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTB_2021_model.rds")
+
+dds_ARTB_group_high <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTB_group_high_model.rds")
+dds_ARTB_group_low <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTB_group_low_model.rds")
+dds_ARTB_group_high_2018 <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTB_group_high_2018_model.rds")
+dds_ARTB_group_high_2021 <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTB_group_high_2021_model.rds")
+dds_ARTB_group_low_2018 <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTB_group_low_2018_model.rds")
+dds_ARTB_group_low_2021 <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTB_group_low_2021_model.rds")
+
+dds_list <- list(dds_ART, dds_ARTB, dds_ARTY, dds_ARTB_2018, dds_ARTB_2021, dds_ARTB_group_high, dds_ARTB_group_low, dds_ARTB_group_high_2018, dds_ARTB_group_high_2021, dds_ARTB_group_low_2018, dds_ARTB_group_low_2021)
+names(dds_list) <- c("dds_ART", "dds_ARTB", "dds_ARTY", "dds_ARTB_2018", "dds_ARTB_2021", "dds_ARTB_group_high", "dds_ARTB_group_low", "dds_ARTB_group_high_2018", "dds_ARTB_group_high_2021", "dds_ARTB_group_low_2018", "dds_ARTB_group_low_2021")
+dds_list_names <- names(dds_list)
+```
+
+Create deseq results list and gene mapping
+```{r}
+dds_list_results <- lapply(
+  dds_list_names,
+  function(i) {
+    dds_res <- results(dds_list[[i]], name = "AT8_total")
+    dds_list_df <- data.frame(ENSGID = rownames(dds_res), baseMean = dds_res$baseMean, log2FoldChange = dds_res$log2FoldChange, lfcSE = dds_res$lfcSE, stat = dds_res$stat, pvalue = dds_res$pvalue, padj = dds_res$padj)
+    dds_list_df$ENSGID <- sub("\\..*$", "", dds_list_df$ENSGID)
+    return(dds_list_df)
+  })
+names(dds_list_results) <- dds_list_names
+
+#makes vector of ENSGIDs for mapping
+ENSG_IDs <- dds_list_results$dds_ART$ENSGID
+
+#Creates a mart object for creating the gene map.
+#ensembl.con <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl")
+#saveRDS(ensembl.con, "Ensembl_gene_dataset.rds")
+ensembl.con <- readRDS("Ensembl_gene_dataset.rds")
+gene_map <- getBM(attributes = c("ensembl_gene_id", "external_gene_name"),
+      filters = "ensembl_gene_id",
+      values = ENSG_IDs,
+      mart = ensembl.con)
+
+gene_list_for_gsea <- subset(gene_map, select = "external_gene_name")
+
+#makes a new column that uses gene symbols unless there is a NA value or no value. In those cases, ENGSID is used instead
+dds_list_results_with_symbols <- lapply (
+  dds_list_names,
+  function(i) {
+    dds_with_symbols <- merge(dds_list_results[[i]], gene_map, by.x = "ENSGID", by.y = "ensembl_gene_id", all.x = TRUE)
+    dds_with_symbols$all_ID <- ifelse(dds_with_symbols$external_gene_name %in% "" | is.na(dds_with_symbols$external_gene_name), dds_with_symbols$ENSGID, dds_with_symbols$external_gene_name)
+    return(dds_with_symbols)
+  })
+names(dds_list_results_with_symbols) <- dds_list_names
+
+```
+
+Subset sig genes
+```{r}
+dds_list_results_with_symbols_05 <- lapply (
+  dds_list_names,
+  function(i) {
+    sig_05 <- subset(dds_list_results_with_symbols[[i]], padj < 0.05)
+    return(sig_05)
+  })
+names(dds_list_results_with_symbols_05) <- dds_list_names
+
+dds_list_results_with_symbols_10 <- lapply (
+  dds_list_names,
+  function(i) {
+    sig_10 <- subset(dds_list_results_with_symbols[[i]], padj < 0.1)
+    return(sig_10)
+  })
+names(dds_list_results_with_symbols_10) <- dds_list_names
+
+dds_list_results_with_symbols_25 <- lapply (
+  dds_list_names,
+  function(i) {
+    sig_25 <- subset(dds_list_results_with_symbols[[i]], padj < 0.25)
+    return(sig_25)
+  })
+names(dds_list_results_with_symbols_25) <- dds_list_names
+
+#Create table showing number of sig degs
+num_sig_deseq <- data.frame( row.names = dds_list_names)
+for (i in dds_list_names) {
+  num_sig_deseq[i, "0.05"] <- nrow(dds_list_results_with_symbols_05[[i]])
+  num_sig_deseq[i, "0.10"] <- nrow(dds_list_results_with_symbols_10[[i]])
+  num_sig_deseq[i, "0.25"] <- nrow(dds_list_results_with_symbols_25[[i]])
+}
+
+```
+
+ARBT CTE_group High vs. Low
+```{r}
+
+#plots for ATB group high vs low
+ARTB_high_vs_low_both <- merge(dds_list_results_with_symbols_05$dds_ARTB_group_high, dds_list_results_with_symbols_05$dds_ARTB_group_low, by = "ENSGID")
+#Creates a vector of all genes significant in both high/low striations
+ARTB_high_vs_low_ENSGID_combined <- unique(c(dds_list_results_with_symbols_05$dds_ARTB_group_low$ENSGID, dds_list_results_with_symbols_05$dds_ARTB_group_high$ENSGID))
+#Creates a df of low or high to include all ENSGIDs from vector made in previous line
+ARTB_low <- dds_list_results_with_symbols$dds_ARTB_group_low[dds_list_results_with_symbols$dds_ARTB_group_low$ENSGID %in% ARTB_high_vs_low_ENSGID_combined, ]
+ARTB_high <- dds_list_results_with_symbols$dds_ARTB_group_high[dds_list_results_with_symbols$dds_ARTB_group_high$ENSGID %in% ARTB_high_vs_low_ENSGID_combined, ]
+ARTB_high_vs_low_either <- merge(ARTB_high, ARTB_low, by = "ENSGID")
+
+combined_plot_ARTB_high_vs_low <- ggplot() +
+      geom_point(data = ARTB_high_vs_low_either, aes(x = log2FoldChange.x, y = log2FoldChange.y)) + 
+      geom_point(data = ARTB_high_vs_low_both, aes(x = log2FoldChange.x, y = log2FoldChange.y), color = "blue")+labs(title = "deseq l2fc  CTEgroup high vs low", y= "log2FoldChange.low", x = "log2FoldChange.high")
+
+#print(combined_plot_ARTB_high_vs_low)
+
+shared_ARTB_high_low <- merge(dds_list_results_with_symbols_05$dds_ARTB_group_high, dds_list_results_with_symbols_05$dds_ARTB_group_low, by = c("ENSGID", "external_gene_name", "all_ID"), suffixes = c(".high",".low"))
+
+```
+
+ARBT_group_high_2018_vs_ARBT_group_low_2018
+```{r}
+
+#plots for ATB group high vs low
+ARTB_high2018_vs_low2018_both <- merge(dds_list_results_with_symbols_05$dds_ARTB_group_high_2018, dds_list_results_with_symbols_05$dds_ARTB_group_low_2018, by = "ENSGID")
+#Creates a vector of all genes significant in both high/low striations
+ARTB_high2018_vs_low2018_ENSGID_combined <- unique(c(dds_list_results_with_symbols_05$dds_ARTB_group_high_2018$ENSGID, dds_list_results_with_symbols_05$dds_ARTB_group_low_2018$ENSGID))
+#Creates a df of low or high to include all ENSGIDs from vector made in previous line
+ARTB_low2018 <- dds_list_results_with_symbols$dds_ARTB_group_low_2018[dds_list_results_with_symbols$dds_ARTB_group_low_2018$ENSGID %in% ARTB_high2018_vs_low2018_ENSGID_combined, ]
+ARTB_high2018 <- dds_list_results_with_symbols$dds_ARTB_group_high_2018[dds_list_results_with_symbols$dds_ARTB_group_high_2018$ENSGID %in% ARTB_high2018_vs_low2018_ENSGID_combined, ]
+ARTB_high2018_vs_low2018_either <- merge(ARTB_high2018, ARTB_low2018, by = "ENSGID")
+
+combined_plot_ARTB_high2018_vs_low2018 <- ggplot() +
+      geom_point(data = ARTB_high2018_vs_low2018_either, aes(x = log2FoldChange.x, y = log2FoldChange.y)) + 
+      geom_point(data = ARTB_high2018_vs_low2018_both, aes(x = log2FoldChange.x, y = log2FoldChange.y), color = "blue")+labs(title = "deseq l2fc  CTEgroup high vs low (2018 only)", y= "log2FoldChange.low", x = "log2FoldChange.high")
+
+#print(combined_plot_ARTB_high2018_vs_low2018)
+
+shared_ARTB_high_low_2018 <- merge(dds_list_results_with_symbols_05$dds_ARTB_group_high_2018, dds_list_results_with_symbols_05$dds_ARTB_group_low_2018, by = c("ENSGID", "external_gene_name", "all_ID"), suffixes = c(".high_2018",".low_2018"))
+
+```
+
+ARBT_group_high_2021_vs_ARBT_group_low_2021
+```{r}
+#plots for ATB group high vs low
+dds_list_results_with_symbols_05$dds_ARTB_group_low_2021 <- subset(dds_list_results_with_symbols_05$dds_ARTB_group_low_2021, log2FoldChange > -15)
+dds_list_results_with_symbols_05$dds_ARTB_group_high_2021 <- subset(dds_list_results_with_symbols_05$dds_ARTB_group_high_2021, log2FoldChange > -15)
+ARTB_high2021_vs_low2021_both <- merge(dds_list_results_with_symbols_05$dds_ARTB_group_high_2021, dds_list_results_with_symbols_05$dds_ARTB_group_low_2021, by = "ENSGID")
+#Creates a vector of all genes significant in both high/low striations
+ARTB_high2021_vs_low2021_ENSGID_combined <- unique(c(dds_list_results_with_symbols_05$dds_ARTB_group_high_2021$ENSGID, dds_list_results_with_symbols_05$dds_ARTB_group_low_2021$ENSGID))
+#Creates a df of low or high to include all ENSGIDs from vector made in previous line
+ARTB_low2021 <- dds_list_results_with_symbols$dds_ARTB_group_low_2021[dds_list_results_with_symbols$dds_ARTB_group_low_2021$ENSGID %in% ARTB_high2021_vs_low2021_ENSGID_combined, ]
+ARTB_high2021 <- dds_list_results_with_symbols$dds_ARTB_group_high_2021[dds_list_results_with_symbols$dds_ARTB_group_high_2021$ENSGID %in% ARTB_high2021_vs_low2021_ENSGID_combined, ]
+ARTB_high2021_vs_low2021_either <- merge(ARTB_high2021, ARTB_low2021, by = "ENSGID")
+
+combined_plot_ARTB_high2021_vs_low2021 <- ggplot() +
+      geom_point(data = ARTB_high2021_vs_low2021_either, aes(x = log2FoldChange.x, y = log2FoldChange.y)) + 
+      geom_point(data = ARTB_high2021_vs_low2021_both, aes(x = log2FoldChange.x, y = log2FoldChange.y), color = "blue")+labs(title = "deseq l2fc  CTEgroup high vs low (2021 only)", y= "log2FoldChange.low", x = "log2FoldChange.high")
+
+#print(combined_plot_ARTB_high2021_vs_low2021)
+
+shared_ARTB_high_low_2021 <- merge(dds_list_results_with_symbols_05$dds_ARTB_group_high_2021, dds_list_results_with_symbols_05$dds_ARTB_group_low_2021, by = c("ENSGID", "external_gene_name", "all_ID"), suffixes = c(".high_2021",".low_2021"))
+
+#test <- dds_list_results_with_symbols_05$dds_ARTB_group_high_2021
+```
+
+ARBT_2018_vs_ARBT_2021
+```{r}
+#plots for ATB group high vs low
+ARTB_2018_vs_2021_both <- merge(dds_list_results_with_symbols_05$dds_ARTB_2018, dds_list_results_with_symbols_05$dds_ARTB_2021, by = "ENSGID")
+#Creates a vector of all genes significant in both high/low striations
+ARTB_2018_vs_2021_ENSGID_combined <- unique(c(dds_list_results_with_symbols_05$dds_ARTB_2018$ENSGID, dds_list_results_with_symbols_05$dds_ARTB_2021$ENSGID))
+#Creates a df of low or high to include all ENSGIDs from vector made in previous line
+ARTB_2018 <- dds_list_results_with_symbols$dds_ARTB_2018[dds_list_results_with_symbols$dds_ARTB_2018$ENSGID %in% ARTB_2018_vs_2021_ENSGID_combined, ]
+ARTB_2021 <- dds_list_results_with_symbols$dds_ARTB_2021[dds_list_results_with_symbols$dds_ARTB_2021$ENSGID %in% ARTB_2018_vs_2021_ENSGID_combined, ]
+ARTB_2018_vs_2021_either <- merge(ARTB_2018, ARTB_2021, by = "ENSGID")
+
+combined_plot_ARTB_2018_vs_2021 <- ggplot() +
+      geom_point(data = ARTB_2018_vs_2021_either, aes(x = log2FoldChange.x, y = log2FoldChange.y)) + 
+      geom_point(data = ARTB_2018_vs_2021_both, aes(x = log2FoldChange.x, y = log2FoldChange.y), color = "blue")+labs(title = "deseq l2fc  2018 vs 2021", y= "log2FoldChange.2021", x = "log2FoldChange.2018")
+
+#print(combined_plot_ARTB_2018_vs_2021)
+
+shared_ARTB_2018_vs_2021 <- merge(dds_list_results_with_symbols_05$dds_ARTB_2018, dds_list_results_with_symbols_05$dds_ARTB_2021, by = c("ENSGID", "external_gene_name", "all_ID"), suffixes = c(".2018",".2021"))
+
+```
+
+ARBT_group_high_2018 vs ARBT_group_high_2021
+#ARBT_group_low_2018 vs ARBT_group_low_2021      didn't do because 30 values in 2018 and 1 value in 2021
+```{r}
+#plots for ATB group high vs low
+ARTB_high2018_vs_high2021_both <- merge(dds_list_results_with_symbols_05$dds_ARTB_group_high_2018, dds_list_results_with_symbols_05$dds_ARTB_group_high_2021, by = "ENSGID")
+#Creates a vector of all genes significant in both high/low striations
+ARTB_high2018_vs_high2021_ENSGID_combined <- unique(c(dds_list_results_with_symbols_05$dds_ARTB_group_high_2018$ENSGID, dds_list_results_with_symbols_05$dds_ARTB_group_high_2021$ENSGID))
+#Creates a df of low or high to include all ENSGIDs from vector made in previous line
+ARTB_high2018 <- dds_list_results_with_symbols$dds_ARTB_group_high_2018[dds_list_results_with_symbols$dds_ARTB_group_high_2018$ENSGID %in% ARTB_high2018_vs_high2021_ENSGID_combined, ]
+ARTB_high2021 <- dds_list_results_with_symbols$dds_ARTB_group_high_2021[dds_list_results_with_symbols$dds_ARTB_group_high_2021$ENSGID %in% ARTB_high2018_vs_high2021_ENSGID_combined, ]
+ARTB_high2018_vs_high2021_either <- merge(ARTB_high2018, ARTB_high2021, by = "ENSGID")
+
+combined_plot_ARTB_high2018_vs_high2021 <- ggplot() +
+      geom_point(data = ARTB_high2018_vs_high2021_either, aes(x = log2FoldChange.x, y = log2FoldChange.y)) + 
+      geom_point(data = ARTB_high2018_vs_high2021_both, aes(x = log2FoldChange.x, y = log2FoldChange.y), color = "blue")+labs(title = "deseq l2fc 2018 vs 2021 (high group only)", y= "log2FoldChange.2021", x = "log2FoldChange.2018")
+
+#print(combined_plot_ARTB_high2018_vs_high2021)
+
+shared_ARTB_high_2018_vs_2021 <- merge(dds_list_results_with_symbols_05$dds_ARTB_group_high_2018, dds_list_results_with_symbols_05$dds_ARTB_group_high_2021, by = c("ENSGID", "external_gene_name", "all_ID"), suffixes = c(".high_2018",".high_2021"))
+
+
+```
+
+
+GSEA Prep 
+```{r}
+gsea_prep <- lapply (
+  dds_list_names,
+  function(i) {
+    sub_dds <- subset(dds_list_results_with_symbols[[i]], !(is.na(external_gene_name) | external_gene_name == "" | duplicated(external_gene_name) == TRUE) & !is.na(stat), select = c(external_gene_name, stat))
+    sub_dds <- deframe(sub_dds)
+  })
+names(gsea_prep) <- dds_list_names
+
+#which(duplicated(gsea_prep$dds_ART))
+#sum(nrow(gsea_prep$dds_ART))
+
+#dds_list_results_with_symbols$dds_ART[duplicated(dds_list_results_with_symbols$dds_ART$stat), ]
+
+
+```
+
+Run FGSEA. 
+```{r}
+
+gsea_synGO <- lapply (
+  dds_list_names,
+  function(i) {
+    print(i)
+    print(which(duplicated(gsea_prep[[i]])))
+    fgsea_synGO <- fgsea(pathways=synGO_gmt, stats=gsea_prep[[i]], eps = 0)
+    return(fgsea_synGO)
+  })
+names(gsea_synGO) <- dds_list_names
+
+
+gsea_cp_c2 <- lapply (
+  dds_list_names,
+  function(i) {
+    print(i)
+    print(which(duplicated(gsea_prep[[i]])))
+    fgsea_c2 <- fgsea(pathways=c2_gmt, stats=gsea_prep[[i]], eps = 0)
+    return(fgsea_c2)
+  })
+names(gsea_cp_c2) <- dds_list_names
+
+
+#fgsea_ARTB <- fgsea(pathways=synGO_gmt, stats=gsea_prep$dds_ARTB_group_low_2018)
+```
+sig subset of results and table
+
+```{r}
+fgsea_synGO_list_results_05 <- lapply (
+  dds_list_names,
+  function(i) {
+    synGO_05 <- subset(gsea_synGO[[i]], padj < 0.05)
+    return(synGO_05)
+  })
+names(fgsea_synGO_list_results_05) <- dds_list_names
+
+fgsea_c2_list_results_05 <- lapply (
+  dds_list_names,
+  function(i) {
+    c2_05 <- subset(gsea_cp_c2[[i]], padj < 0.05)
+    return(c2_05)
+  })
+names(fgsea_c2_list_results_05) <- dds_list_names
+
+fgsea_synGO_list_results_10 <- lapply (
+  dds_list_names,
+  function(i) {
+    synGO_10 <- subset(gsea_synGO[[i]], padj < 0.10)
+    return(synGO_10)
+  })
+names(fgsea_synGO_list_results_10) <- dds_list_names
+
+fgsea_c2_list_results_10 <- lapply (
+  dds_list_names,
+  function(i) {
+    c2_10 <- subset(gsea_cp_c2[[i]], padj < 0.10)
+    return(c2_10)
+  })
+names(fgsea_c2_list_results_10) <- dds_list_names
+
+fgsea_synGO_list_results_25 <- lapply (
+  dds_list_names,
+  function(i) {
+    synGO_25 <- subset(gsea_synGO[[i]], padj < 0.25)
+    return(synGO_25)
+  })
+names(fgsea_synGO_list_results_25) <- dds_list_names
+
+fgsea_c2_list_results_25 <- lapply (
+  dds_list_names,
+  function(i) {
+    c2_25 <- subset(gsea_cp_c2[[i]], padj < 0.25)
+    return(c2_25)
+  })
+names(fgsea_c2_list_results_25) <- dds_list_names
+
+num_sig_gsea <- data.frame( row.names = dds_list_names)
+for (i in dds_list_names) {
+  num_sig_gsea[i, "synGO_0.05"] <- nrow(fgsea_synGO_list_results_05[[i]])
+  num_sig_gsea[i, "synGO_0.10"] <- nrow(fgsea_synGO_list_results_10[[i]])
+  num_sig_gsea[i, "synGO_0.25"] <- nrow(fgsea_synGO_list_results_25[[i]])
+  num_sig_gsea[i, "C2_CP_0.05"] <- nrow(fgsea_c2_list_results_05[[i]])
+  num_sig_gsea[i, "C2_CP_0.10"] <- nrow(fgsea_c2_list_results_10[[i]])
+  num_sig_gsea[i, "C2_CP_0.25"] <- nrow(fgsea_c2_list_results_25[[i]])
+}
+```
+
+synGO gsea plots - low vs high all samples
+```{r}
+#plots for ATB group high vs low
+gsea_synGO_ARTB_high_vs_low_both <- merge(fgsea_synGO_list_results_05$dds_ARTB_group_high, fgsea_synGO_list_results_05$dds_ARTB_group_low, by = "pathway")
+#Creates a vector of all genes significant in both high/low striations
+gsea_synGO_ARTB_high_vs_low_combined <- unique(c(fgsea_synGO_list_results_05$dds_ARTB_group_low$pathway, fgsea_synGO_list_results_05$dds_ARTB_group_high$pathway))
+#Creates a df of low or high to include all pathways from vector made in previous line
+gsea_synGO_ARTB_low <- gsea_synGO$dds_ARTB_group_low[gsea_synGO$dds_ARTB_group_low$pathway %in% gsea_synGO_ARTB_high_vs_low_combined, ]
+gsea_synGO_ARTB_high <- gsea_synGO$dds_ARTB_group_high[gsea_synGO$dds_ARTB_group_high$pathway %in% gsea_synGO_ARTB_high_vs_low_combined, ]
+gsea_synGO_ARTB_high_vs_low_either <- merge(gsea_synGO_ARTB_high, gsea_synGO_ARTB_low, by = "pathway")
+
+gsea_synGO_combined_plot_ARTB_high_vs_low <- ggplot() +
+      geom_point(data = gsea_synGO_ARTB_high_vs_low_either, aes(x = NES.x, y = NES.y)) + 
+      geom_point(data = gsea_synGO_ARTB_high_vs_low_both, aes(x = NES.x, y = NES.y), color = "blue")+labs(title = "GSEA synGO high vs low groups (both years)", y= "low group NES", x = "high group NES")
+
+#print(gsea_synGO_combined_plot_ARTB_high_vs_low)
+
+gsea_synGO_shared_ARTB_high_low <- merge(fgsea_synGO_list_results_05$dds_ARTB_group_high, fgsea_synGO_list_results_05$dds_ARTB_group_low, by = "pathway", suffixes = c(".high",".low"))
+
+```
+
+synGO gsea plots - ARTB high 2018 vs high 2021
+```{r}
+
+#dataframe of shared pathways
+gsea_synGO_ARTB_high2018_vs_high2021_both <- merge(fgsea_synGO_list_results_05$dds_ARTB_group_high_2018, fgsea_synGO_list_results_05$dds_ARTB_group_high_2021, by = "pathway")
+#Creates a vector of all pathways significant in both striations
+gsea_synGO_ARTB_high2018_vs_high2021_combined <- unique(c(fgsea_synGO_list_results_05$dds_ARTB_group_high_2018$pathway, fgsea_synGO_list_results_05$dds_ARTB_group_high_2021$pathway))
+
+#Creates a dataframe of striations to include all pathways from vector made in previous line
+gsea_synGO_ARTB_high2018 <- gsea_synGO$dds_ARTB_group_high_2018[gsea_synGO$dds_ARTB_group_high_2018$pathway %in% gsea_synGO_ARTB_high2018_vs_high2021_combined, ]
+
+gsea_synGO_ARTB_high2021 <- gsea_synGO$dds_ARTB_group_high_2021[gsea_synGO$dds_ARTB_group_high_2021$pathway %in% gsea_synGO_ARTB_high2018_vs_high2021_combined, ]
+
+gsea_synGO_ARTB_high2018_vs_high2021_either <- merge(gsea_synGO_ARTB_high2018, gsea_synGO_ARTB_high2021, by = "pathway")
+
+gsea_synGO_combined_plot_ARTB_high2018_vs_high2021 <- ggplot() +
+      geom_point(data = gsea_synGO_ARTB_high2018_vs_high2021_either, aes(x = NES.x, y = NES.y)) + 
+      geom_point(data = gsea_synGO_ARTB_high2018_vs_high2021_both, aes(x = NES.x, y = NES.y), color = "blue")+labs(title = "GSEA synGO group 2018 vs 2021 (high group only)", y= "2021 data NES", x = "2018 data NES")
+
+#print(gsea_synGO_combined_plot_ARTB_high2018_vs_high2021)
+
+gsea_synGO_shared_ARTB_high_2018_vs_2021 <- merge(fgsea_synGO_list_results_05$dds_ARTB_group_high_2018, fgsea_synGO_list_results_05$dds_ARTB_group_high_2021, by = "pathway", suffixes = c(".high_2018",".high_2021"))
+
+```
+
+synGO fgsea low 2018 vs low 2021
+```{r}
+#dataframe of shared pathways
+gsea_synGO_ARTB_low2018_vs_low2021_both <- merge(fgsea_synGO_list_results_05$dds_ARTB_group_low_2018, fgsea_synGO_list_results_05$dds_ARTB_group_low_2021, by = "pathway")
+#Creates a vector of all pathways significant in both striations
+gsea_synGO_ARTB_low2018_vs_low2021_combined <- unique(c(fgsea_synGO_list_results_05$dds_ARTB_group_low_2018$pathway, fgsea_synGO_list_results_05$dds_ARTB_group_low_2021$pathway))
+
+#Creates a dataframe of striations to include all pathways from vector made in previous line
+gsea_synGO_ARTB_low2018 <- gsea_synGO$dds_ARTB_group_low_2018[gsea_synGO$dds_ARTB_group_low_2018$pathway %in% gsea_synGO_ARTB_low2018_vs_low2021_combined, ]
+
+gsea_synGO_ARTB_low2021 <- gsea_synGO$dds_ARTB_group_low_2021[gsea_synGO$dds_ARTB_group_low_2021$pathway %in% gsea_synGO_ARTB_low2018_vs_low2021_combined, ]
+
+gsea_synGO_ARTB_low2018_vs_low2021_either <- merge(gsea_synGO_ARTB_low2018, gsea_synGO_ARTB_low2021, by = "pathway")
+
+gsea_synGO_combined_plot_ARTB_low2018_vs_low2021 <- ggplot() +
+      geom_point(data = gsea_synGO_ARTB_low2018_vs_low2021_either, aes(x = NES.x, y = NES.y)) + 
+      geom_point(data = gsea_synGO_ARTB_low2018_vs_low2021_both, aes(x = NES.x, y = NES.y), color = "blue")+labs(title = "GSEA synGO group 2018 vs 2021 (low group only)", y= "2021 data NES", x = "2018 data NES")
+
+#print(gsea_synGO_combined_plot_ARTB_low2018_vs_low2021)
+
+gsea_synGO_shared_ARTB_low_2018_vs_2021 <- merge(fgsea_synGO_list_results_05$dds_ARTB_group_low_2018, fgsea_synGO_list_results_05$dds_ARTB_group_low_2021, by = "pathway", suffixes = c(".low_2018",".low_2021"))
+```
+
+synGO gsea 2018 high vs 2018 low 
+```{r}
+#plots for ARTB group high vs low
+gsea_synGO_ARTB_high2018_vs_low2018_both <- merge(fgsea_synGO_list_results_05$dds_ARTB_group_high_2018, fgsea_synGO_list_results_05$dds_ARTB_group_low_2018, by = "pathway")
+#Creates a vector of all pathways significant in both high/low striations
+gsea_synGO_ARTB_high2018_vs_low2018_combined <- unique(c(fgsea_synGO_list_results_05$dds_ARTB_group_high_2018$pathway, fgsea_synGO_list_results_05$dds_ARTB_group_low_2018$pathway))
+#Creates a df of low or high to include all pathways from vector made in previous line
+gsea_synGO_ARTB_low2018 <- gsea_synGO$dds_ARTB_group_low_2018[gsea_synGO$dds_ARTB_group_low_2018$pathway %in% gsea_synGO_ARTB_high2018_vs_low2018_combined, ]
+gsea_synGO_ARTB_high2018 <- gsea_synGO$dds_ARTB_group_high_2018[gsea_synGO$dds_ARTB_group_high_2018$pathway %in% gsea_synGO_ARTB_high2018_vs_low2018_combined, ]
+gsea_synGO_ARTB_high2018_vs_low2018_either <- merge(gsea_synGO_ARTB_high2018, gsea_synGO_ARTB_low2018, by = "pathway")
+
+gsea_synGO_combined_plot_ARTB_high2018_vs_low2018 <- ggplot() +
+      geom_point(data = gsea_synGO_ARTB_high2018_vs_low2018_either, aes(x = NES.x, y = NES.y)) + 
+      geom_point(data = gsea_synGO_ARTB_high2018_vs_low2018_both, aes(x = NES.x, y = NES.y), color = "blue")+labs(title = "GSEA synGO group high vs low (2018 only)", y= "low group NES", x = "high group NES")
+
+#print(gsea_synGO_combined_plot_ARTB_high2018_vs_low2018)
+
+gsea_synGO_shared_ARTB_high_low_2018 <- merge(fgsea_synGO_list_results_05$dds_ARTB_group_high_2018, fgsea_synGO_list_results_05$dds_ARTB_group_low_2018, by = "pathway", suffixes = c(".high_2018",".low_2018"))
+
+```
+
+synGO gsea 2021 high vs 2021 low
+```{r}
+#plots for ARTB group high vs low
+gsea_synGO_ARTB_high2021_vs_low2021_both <- merge(fgsea_synGO_list_results_05$dds_ARTB_group_high_2021, fgsea_synGO_list_results_05$dds_ARTB_group_low_2021, by = "pathway")
+#Creates a vector of all pathways significant in both high/low striations
+gsea_synGO_ARTB_high2021_vs_low2021_combined <- unique(c(fgsea_synGO_list_results_05$dds_ARTB_group_high_2021$pathway, fgsea_synGO_list_results_05$dds_ARTB_group_low_2021$pathway))
+#Creates a df of low or high to include all pathways from vector made in previous line
+gsea_synGO_ARTB_low2021 <- gsea_synGO$dds_ARTB_group_low_2021[gsea_synGO$dds_ARTB_group_low_2021$pathway %in% gsea_synGO_ARTB_high2021_vs_low2021_combined, ]
+gsea_synGO_ARTB_high2021 <- gsea_synGO$dds_ARTB_group_high_2021[gsea_synGO$dds_ARTB_group_high_2021$pathway %in% gsea_synGO_ARTB_high2021_vs_low2021_combined, ]
+gsea_synGO_ARTB_high2021_vs_low2021_either <- merge(gsea_synGO_ARTB_high2021, gsea_synGO_ARTB_low2021, by = "pathway")
+
+gsea_synGO_combined_plot_ARTB_high2021_vs_low2021 <- ggplot() +
+      geom_point(data = gsea_synGO_ARTB_high2021_vs_low2021_either, aes(x = NES.x, y = NES.y)) + 
+      geom_point(data = gsea_synGO_ARTB_high2021_vs_low2021_both, aes(x = NES.x, y = NES.y), color = "blue") +labs(title = "GSEA synGO group high vs low (2021 only)", y= "low group NES", x = "high group NES")
+
+#print(gsea_synGO_combined_plot_ARTB_high2021_vs_low2021)
+
+gsea_synGO_shared_ARTB_high_low_2021 <- merge(fgsea_synGO_list_results_05$dds_ARTB_group_high_2021, fgsea_synGO_list_results_05$dds_ARTB_group_low_2021, by = "pathway", suffixes = c(".high_2021",".low_2021"))
+
+```
+!!!!!
+cp_c2 gsea plots - low vs high all samples
+
+fgsea_c2_list_results_05
+```{r}
+#plots for ATB group high vs low
+gsea_cp_c2_ARTB_high_vs_low_both <- merge(fgsea_c2_list_results_05$dds_ARTB_group_high, fgsea_c2_list_results_05$dds_ARTB_group_low, by = "pathway")
+#Creates a vector of all genes significant in both high/low striations
+gsea_cp_c2_ARTB_high_vs_low_combined <- unique(c(fgsea_c2_list_results_05$dds_ARTB_group_low$pathway, fgsea_c2_list_results_05$dds_ARTB_group_high$pathway))
+#Creates a df of low or high to include all pathways from vector made in previous line
+gsea_cp_c2_ARTB_low <- gsea_cp_c2$dds_ARTB_group_low[gsea_cp_c2$dds_ARTB_group_low$pathway %in% gsea_cp_c2_ARTB_high_vs_low_combined, ]
+gsea_cp_c2_ARTB_high <- gsea_cp_c2$dds_ARTB_group_high[gsea_cp_c2$dds_ARTB_group_high$pathway %in% gsea_cp_c2_ARTB_high_vs_low_combined, ]
+gsea_cp_c2_ARTB_high_vs_low_either <- merge(gsea_cp_c2_ARTB_high, gsea_cp_c2_ARTB_low, by = "pathway")
+
+gsea_cp_c2_combined_plot_ARTB_high_vs_low <- ggplot() +
+      geom_point(data = gsea_cp_c2_ARTB_high_vs_low_either, aes(x = NES.x, y = NES.y)) + 
+      geom_point(data = gsea_cp_c2_ARTB_high_vs_low_both, aes(x = NES.x, y = NES.y), color = "blue")+labs(title = "GSEA cp_c2 high vs low groups (both years)", y= "low group NES", x = "high group NES")
+
+#print(gsea_cp_c2_combined_plot_ARTB_high_vs_low)
+
+gsea_cp_c2_shared_ARTB_high_low <- merge(fgsea_c2_list_results_05$dds_ARTB_group_high, fgsea_c2_list_results_05$dds_ARTB_group_low, by = "pathway", suffixes = c(".high",".low"))
+
+```
+
+cp_c2 gsea plots - ARTB high 2018 vs high 2021
+```{r}
+
+#dataframe of shared pathways
+gsea_cp_c2_ARTB_high2018_vs_high2021_both <- merge(fgsea_c2_list_results_05$dds_ARTB_group_high_2018, fgsea_c2_list_results_05$dds_ARTB_group_high_2021, by = "pathway")
+#Creates a vector of all pathways significant in both striations
+gsea_cp_c2_ARTB_high2018_vs_high2021_combined <- unique(c(fgsea_c2_list_results_05$dds_ARTB_group_high_2018$pathway, fgsea_c2_list_results_05$dds_ARTB_group_high_2021$pathway))
+
+#Creates a dataframe of striations to include all pathways from vector made in previous line
+gsea_cp_c2_ARTB_high2018 <- gsea_cp_c2$dds_ARTB_group_high_2018[gsea_cp_c2$dds_ARTB_group_high_2018$pathway %in% gsea_cp_c2_ARTB_high2018_vs_high2021_combined, ]
+
+gsea_cp_c2_ARTB_high2021 <- gsea_cp_c2$dds_ARTB_group_high_2021[gsea_cp_c2$dds_ARTB_group_high_2021$pathway %in% gsea_cp_c2_ARTB_high2018_vs_high2021_combined, ]
+
+gsea_cp_c2_ARTB_high2018_vs_high2021_either <- merge(gsea_cp_c2_ARTB_high2018, gsea_cp_c2_ARTB_high2021, by = "pathway")
+
+gsea_cp_c2_combined_plot_ARTB_high2018_vs_high2021 <- ggplot() +
+      geom_point(data = gsea_cp_c2_ARTB_high2018_vs_high2021_either, aes(x = NES.x, y = NES.y)) + 
+      geom_point(data = gsea_cp_c2_ARTB_high2018_vs_high2021_both, aes(x = NES.x, y = NES.y), color = "blue")+labs(title = "GSEA cp_c2 group 2018 vs 2021 (high group only)", y= "2021 data NES", x = "2018 data NES")
+
+#print(gsea_cp_c2_combined_plot_ARTB_high2018_vs_high2021)
+
+gsea_cp_c2_shared_ARTB_high_2018_vs_2021 <- merge(fgsea_c2_list_results_05$dds_ARTB_group_high_2018, fgsea_c2_list_results_05$dds_ARTB_group_high_2021, by = "pathway", suffixes = c(".high_2018",".high_2021"))
+
+```
+
+cp_c2 fgsea low 2018 vs low 2021
+```{r}
+#dataframe of shared pathways
+gsea_cp_c2_ARTB_low2018_vs_low2021_both <- merge(fgsea_c2_list_results_05$dds_ARTB_group_low_2018, fgsea_c2_list_results_05$dds_ARTB_group_low_2021, by = "pathway")
+#Creates a vector of all pathways significant in both striations
+gsea_cp_c2_ARTB_low2018_vs_low2021_combined <- unique(c(fgsea_c2_list_results_05$dds_ARTB_group_low_2018$pathway, fgsea_c2_list_results_05$dds_ARTB_group_low_2021$pathway))
+
+#Creates a dataframe of striations to include all pathways from vector made in previous line
+gsea_cp_c2_ARTB_low2018 <- gsea_cp_c2$dds_ARTB_group_low_2018[gsea_cp_c2$dds_ARTB_group_low_2018$pathway %in% gsea_cp_c2_ARTB_low2018_vs_low2021_combined, ]
+
+gsea_cp_c2_ARTB_low2021 <- gsea_cp_c2$dds_ARTB_group_low_2021[gsea_cp_c2$dds_ARTB_group_low_2021$pathway %in% gsea_cp_c2_ARTB_low2018_vs_low2021_combined, ]
+
+gsea_cp_c2_ARTB_low2018_vs_low2021_either <- merge(gsea_cp_c2_ARTB_low2018, gsea_cp_c2_ARTB_low2021, by = "pathway")
+
+gsea_cp_c2_combined_plot_ARTB_low2018_vs_low2021 <- ggplot() +
+      geom_point(data = gsea_cp_c2_ARTB_low2018_vs_low2021_either, aes(x = NES.x, y = NES.y)) + 
+      geom_point(data = gsea_cp_c2_ARTB_low2018_vs_low2021_both, aes(x = NES.x, y = NES.y), color = "blue")+labs(title = "GSEA cp_c2 group 2018 vs 2021 (low group only)", y= "2021 data NES", x = "2018 data NES")
+
+#print(gsea_cp_c2_combined_plot_ARTB_low2018_vs_low2021)
+
+gsea_cp_c2_shared_ARTB_low_2018_vs_2021 <- merge(fgsea_c2_list_results_05$dds_ARTB_group_low_2018, fgsea_c2_list_results_05$dds_ARTB_group_low_2021, by = "pathway", suffixes = c(".low_2018",".low_2021"))
+```
+
+cp_c2 gsea 2018 high vs 2018 low 
+```{r}
+#plots for ARTB group high vs low
+gsea_cp_c2_ARTB_high2018_vs_low2018_both <- merge(fgsea_c2_list_results_05$dds_ARTB_group_high_2018, fgsea_c2_list_results_05$dds_ARTB_group_low_2018, by = "pathway")
+#Creates a vector of all pathways significant in both high/low striations
+gsea_cp_c2_ARTB_high2018_vs_low2018_combined <- unique(c(fgsea_c2_list_results_05$dds_ARTB_group_high_2018$pathway, fgsea_c2_list_results_05$dds_ARTB_group_low_2018$pathway))
+#Creates a df of low or high to include all pathways from vector made in previous line
+gsea_cp_c2_ARTB_low2018 <- gsea_cp_c2$dds_ARTB_group_low_2018[gsea_cp_c2$dds_ARTB_group_low_2018$pathway %in% gsea_cp_c2_ARTB_high2018_vs_low2018_combined, ]
+gsea_cp_c2_ARTB_high2018 <- gsea_cp_c2$dds_ARTB_group_high_2018[gsea_cp_c2$dds_ARTB_group_high_2018$pathway %in% gsea_cp_c2_ARTB_high2018_vs_low2018_combined, ]
+gsea_cp_c2_ARTB_high2018_vs_low2018_either <- merge(gsea_cp_c2_ARTB_high2018, gsea_cp_c2_ARTB_low2018, by = "pathway")
+
+gsea_cp_c2_combined_plot_ARTB_high2018_vs_low2018 <- ggplot() +
+      geom_point(data = gsea_cp_c2_ARTB_high2018_vs_low2018_either, aes(x = NES.x, y = NES.y)) + 
+      geom_point(data = gsea_cp_c2_ARTB_high2018_vs_low2018_both, aes(x = NES.x, y = NES.y), color = "blue")+labs(title = "GSEA cp_c2 group high vs low (2018 only)", y= "low group NES", x = "high group NES")
+
+#print(gsea_cp_c2_combined_plot_ARTB_high2018_vs_low2018)
+
+gsea_cp_c2_shared_ARTB_high_low_2018 <- merge(fgsea_c2_list_results_05$dds_ARTB_group_high_2018, fgsea_c2_list_results_05$dds_ARTB_group_low_2018, by = "pathway", suffixes = c(".high_2018",".low_2018"))
+
+```
+
+c2_cp gsea 2021 high vs 2021 low
+```{r}
+#plots for ARTB group high vs low
+gsea_cp_c2_ARTB_high2021_vs_low2021_both <- merge(fgsea_c2_list_results_05$dds_ARTB_group_high_2021, fgsea_c2_list_results_05$dds_ARTB_group_low_2021, by = "pathway")
+#Creates a vector of all pathways significant in both high/low striations
+gsea_cp_c2_ARTB_high2021_vs_low2021_combined <- unique(c(fgsea_c2_list_results_05$dds_ARTB_group_high_2021$pathway, fgsea_c2_list_results_05$dds_ARTB_group_low_2021$pathway))
+#Creates a df of low or high to include all pathways from vector made in previous line
+gsea_cp_c2_ARTB_low2021 <- gsea_cp_c2$dds_ARTB_group_low_2021[gsea_cp_c2$dds_ARTB_group_low_2021$pathway %in% gsea_cp_c2_ARTB_high2021_vs_low2021_combined, ]
+gsea_cp_c2_ARTB_high2021 <- gsea_cp_c2$dds_ARTB_group_high_2021[gsea_cp_c2$dds_ARTB_group_high_2021$pathway %in% gsea_cp_c2_ARTB_high2021_vs_low2021_combined, ]
+gsea_cp_c2_ARTB_high2021_vs_low2021_either <- merge(gsea_cp_c2_ARTB_high2021, gsea_cp_c2_ARTB_low2021, by = "pathway")
+
+gsea_cp_c2_combined_plot_ARTB_high2021_vs_low2021 <- ggplot() +
+      geom_point(data = gsea_cp_c2_ARTB_high2021_vs_low2021_either, aes(x = NES.x, y = NES.y)) + 
+      geom_point(data = gsea_cp_c2_ARTB_high2021_vs_low2021_both, aes(x = NES.x, y = NES.y), color = "blue") +labs(title = "GSEA cp_c2 group high vs low (2021 only)", y= "low group NES", x = "high group NES")
+
+#print(gsea_cp_c2_combined_plot_ARTB_high2021_vs_low2021)
+
+gsea_cp_c2_shared_ARTB_high_low_2021 <- merge(fgsea_c2_list_results_05$dds_ARTB_group_high_2021, fgsea_c2_list_results_05$dds_ARTB_group_low_2021, by = "pathway", suffixes = c(".high_2021",".low_2021"))
+
+```
+
+
+view(num_sig_gsea)
+view(num_sig_deseq)
+
+deseq results:                view(dds_list_results_with_symbols$
+deseq results significant:    view(dds_list_results_with_symbols_05$
+                              view(dds_list_results_with_symbols$ %>% filter(padj < 0.10))
+
+synGO results:                view(gsea_synGO$
+synGO results significant:    view(fgsea_synGO_list_results_05$
+                              view(gsea_synGO$ %>% filter(padj < 0.10))
+
+CP C2 results:                view(gsea_c2_cp$
+CP C2 results significant:    view(fgsea_c2_list_results_05$ 
+                              view(gsea_c2_cp$ %>% filter(padj < 0.10))
+```{r}
+#deseq2 lo2foldchange
+
+print(combined_plot_ARTB_high_vs_low)
+print(combined_plot_ARTB_high2018_vs_low2018)
+print(combined_plot_ARTB_high2021_vs_low2021)
+print(combined_plot_ARTB_2018_vs_2021)
+print(combined_plot_ARTB_high2018_vs_high2021)
+```
+CP C2
+```{r}
+print(gsea_cp_c2_combined_plot_ARTB_high_vs_low)
+print(gsea_cp_c2_combined_plot_ARTB_high2018_vs_high2021)
+print(gsea_cp_c2_combined_plot_ARTB_low2018_vs_low2021)
+print(gsea_cp_c2_combined_plot_ARTB_high2018_vs_low2018)
+print(gsea_cp_c2_combined_plot_ARTB_high2021_vs_low2021)
+```
+
+
+synGO
+```{r}
+print(gsea_synGO_combined_plot_ARTB_high_vs_low)
+print(gsea_synGO_combined_plot_ARTB_high2018_vs_high2021)
+print(gsea_synGO_combined_plot_ARTB_low2018_vs_low2021)
+print(gsea_synGO_combined_plot_ARTB_high2018_vs_low2018)
+print(gsea_synGO_combined_plot_ARTB_high2021_vs_low2021)
+```
+
+
+
+
+
+

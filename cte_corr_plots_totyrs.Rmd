@@ -1,0 +1,314 @@
+
+```{r}
+library(DESeq2)
+library(dplyr)
+library(biomaRt)
+library(tidyverse)
+library(gt)
+library(pheatmap)
+library(fgsea)
+library(corrplot)
+
+cte_deseq_obj <- readRDS("/restricted/projectnb/cteseq/jrose/cte_corr_work/cte_deseq_output_for_corr_totyrs.rds")
+deseq_obj_names <- names(cte_deseq_obj)
+
+synGO_gmt <- gmtPathways("/restricted/projectnb/cteseq/jrose/synGO.gmt")
+c2_gmt <- gmtPathways("/restricted/projectnb/cteseq/jrose/c2.cp.v2023.2.Hs.symbols.gmt")
+```
+
+Script for running gsea
+```{r} 
+all_deseq_results <- lapply(
+  deseq_obj_names,
+  function(i) {
+    dds_res <- results(cte_deseq_obj[[i]])
+    dds_list_df <- data.frame(ENSGID = rownames(dds_res), baseMean = dds_res$baseMean, log2FoldChange = dds_res$log2FoldChange, lfcSE = dds_res$lfcSE, stat = dds_res$stat, pvalue = dds_res$pvalue, padj = dds_res$padj)
+    dds_list_df$ENSGID <- sub("\\..*$", "", dds_list_df$ENSGID)
+    return(dds_list_df)
+  })
+names(all_deseq_results) <- deseq_obj_names
+
+
+#makes vector of ENSGIDs for mapping
+ENSG_IDs <- all_deseq_results$CTE$ENSGID
+ensembl.con <- readRDS("/restricted/projectnb/cteseq/jrose/Ensembl_gene_dataset.rds")
+#ensembl.con_test <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl")
+
+gene_map <- getBM(attributes = c("ensembl_gene_id", "external_gene_name"),
+      filters = "ensembl_gene_id",
+      values = ENSG_IDs,
+      mart = ensembl.con)
+
+gene_list_for_gsea <- subset(gene_map, select = "external_gene_name")
+
+#makes a new column that uses gene symbols unless there is a NA value or no value. In those cases, ENGSID is used instead
+dds_list_results_with_symbols <- lapply (
+  deseq_obj_names,
+  function(i) {
+    dds_with_symbols <- merge(all_deseq_results[[i]], gene_map, by.x = "ENSGID", by.y = "ensembl_gene_id", all.x = TRUE)
+    dds_with_symbols$all_ID <- ifelse(dds_with_symbols$external_gene_name %in% "" | is.na(dds_with_symbols$external_gene_name), dds_with_symbols$ENSGID, dds_with_symbols$external_gene_name)
+    return(dds_with_symbols)
+  })
+names(dds_list_results_with_symbols) <- deseq_obj_names
+
+#gsea prep
+gsea_prep <- lapply (
+  deseq_obj_names,
+  function(i) {
+    sub_dds <- subset(dds_list_results_with_symbols[[i]], !(is.na(external_gene_name) | external_gene_name == "" | duplicated(external_gene_name) == TRUE) & !is.na(stat), select = c(external_gene_name, stat))
+    sub_dds <- deframe(sub_dds)
+  })
+names(gsea_prep) <- deseq_obj_names
+
+gsea_synGO <- lapply (
+  deseq_obj_names,
+  function(i) {
+    print(i)
+    print(which(duplicated(gsea_prep[[i]])))
+    fgsea_synGO <- fgsea(pathways=synGO_gmt, stats=gsea_prep[[i]], eps = 0)
+    return(fgsea_synGO)
+  })
+names(gsea_synGO) <- deseq_obj_names
+
+
+gsea_cp_c2 <- lapply (
+  deseq_obj_names,
+  function(i) {
+    print(i)
+    print(which(duplicated(gsea_prep[[i]])))
+    fgsea_c2 <- fgsea(pathways=c2_gmt, stats=gsea_prep[[i]], eps = 0)
+    return(fgsea_c2)
+  })
+names(gsea_cp_c2) <- deseq_obj_names
+
+
+#saveRDS(gsea_synGO, file = "cte_corr_totyrs_gsea_synGO.rds")
+#saveRDS(gsea_cp_c2, file = "cte_corr_totyrs_gsea_cp_c2.rds")
+
+```
+subsetting non-significant pathways
+
+```{r}
+gsea_synGO <- readRDS("cte_corr_totyrs_gsea_synGO.rds")
+gsea_cp_c2 <- readRDS("cte_corr_totyrs_gsea_cp_c2.rds")
+
+pathway_list_c2_cp <- c()
+pathway_list_synGO <- c()
+
+for (i in names(gsea_cp_c2)) {
+  pathway_list_c2_cp <- append(pathway_list_c2_cp, gsea_cp_c2[[i]]$pathway)
+}
+
+for (i in names(gsea_synGO)) {
+  pathway_list_synGO <- append(pathway_list_synGO, gsea_synGO[[i]]$pathway)
+}
+
+pathway_list_c2_cp <- unique(pathway_list_c2_cp)
+pathway_list_synGO <- unique(pathway_list_synGO)
+pathway_list_c2_cp <- as.data.frame(pathway_list_c2_cp)
+pathway_list_synGO <- as.data.frame(pathway_list_synGO)
+colnames(pathway_list_c2_cp) <- "pathway"
+colnames(pathway_list_synGO) <- "pathway"
+```
+
+gsea NES correlation
+```{r}
+gsea_cp_c2_nes_only <- lapply (
+  names(gsea_cp_c2),
+  function(i) {
+    sub_gsea <- subset(gsea_cp_c2[[i]], select = c(pathway, NES))
+    colnames(sub_gsea)[colnames(sub_gsea) == "NES"] <- i
+    return(sub_gsea)
+  }
+)
+names(gsea_cp_c2_nes_only) <- deseq_obj_names
+
+for (i in names(gsea_cp_c2_nes_only)){
+  pathway_list_c2_cp <- merge(pathway_list_c2_cp, gsea_cp_c2_nes_only[[i]], by = "pathway")
+}
+
+
+gsea_synGO_nes_only <- lapply (
+  names(gsea_synGO),
+  function(i) {
+    sub_gsea <- subset(gsea_synGO[[i]], select = c(pathway, NES))
+    colnames(sub_gsea)[colnames(sub_gsea) == "NES"] <- i
+    return(sub_gsea)
+  }
+)
+names(gsea_synGO_nes_only) <- deseq_obj_names
+
+for (i in names(gsea_synGO_nes_only)){
+  pathway_list_synGO <- merge(pathway_list_synGO, gsea_synGO_nes_only[[i]], by = "pathway", all.x = TRUE)
+}
+
+cp_c2_nes_corr <- pathway_list_c2_cp
+synGO_nes_corr <- pathway_list_synGO
+
+rownames(cp_c2_nes_corr) <- cp_c2_nes_corr$pathway
+rownames(synGO_nes_corr) <- synGO_nes_corr$pathway
+
+cp_c2_nes_corr <- subset(cp_c2_nes_corr, select = -c(pathway))
+synGO_nes_corr <- subset(synGO_nes_corr, select = -c(pathway))
+
+cp_c2_nes_corr <- cp_c2_nes_corr[complete.cases(cp_c2_nes_corr),]
+synGO_nes_corr <- synGO_nes_corr[complete.cases(synGO_nes_corr),]
+
+cp_c2_nes_corr_fun <- cor(cp_c2_nes_corr)
+synGO_nes_corr_fun <- cor(synGO_nes_corr)
+
+cp_c2_nes_corr_table <- as.data.frame(cp_c2_nes_corr_fun, use='pairwise.complete.obs')
+synGO_nes_corr_table <- as.data.frame(synGO_nes_corr_fun, use='pairwise.complete.obs')
+pdf("/restricted/projectnb/cteseq/jrose/cte_corr_work/nes_corr_totyrs.pdf")
+corrplot(cp_c2_nes_corr_fun, order = 'hclust', tl.cex = 0.5, number.cex = 0.5)
+dev.off()
+corrplot(synGO_nes_corr_fun, order = 'hclust', tl.cex = 0.5, number.cex = 0.5)
+```
+
+
+
+
+
+
+Metadata correlation
+```{r}
+merged_meta_cor <- readRDS("meta_file_only_for_DeTREM_sample_ref.rds")
+merged_meta_cor$Group_de <- gsub("low", 0, merged_meta_cor$Group_de)
+merged_meta_cor$Group_de <- gsub("high", 1, merged_meta_cor$Group_de)
+merged_meta_cor$Group_de <- as.numeric(merged_meta_cor$Group_de)
+merged_meta_cor$npbraak <- as.numeric(merged_meta_cor$npbraak)
+#merged_meta_cor$Batch <- as.factor(merged_meta_cor$Batch)
+#merged_meta_cor$Year <- as.factor(merged_meta_cor$Year)
+
+rownames(merged_meta_cor) <- merged_meta_cor$Core_ID
+
+nes_clust_order_meta <- subset(merged_meta_cor, select =c("csparCTE", "AFE", "chii_r", "chii_g", "chii_f", "agecogsx", "npavas", "cogdecage", "mincogage", "footyrs", "npftdtau", "CTE", "TMEM106B_dom", "nppath", "npwmr", "sleepact", "disdur", "npold", "bistot", "GDStot", "ParknismHx", "faqtot", "nphemo", "PathFTD", "TMEM106B_invrec", "maxaggsum", "nparter", "aestot", "CA1ratio", "CA4ratio", "subratio", "CA23ratio", "tbri", "tmi", "tgec", "CDStot", "npneur", "npbraak", "PathAD", "npdiff", "AT8_total", "npadnc"))
+
+continuous <- c("aestot", "RIN", "footyrs", "AFE", "totyrs", "bistot", "tbri", "tmi", "tgec", "maxaggsum", "CDStot", "chii_f", "chii_r", "chii_g", "faqtot", "GDStot", "agedeath", "micdorfront", "micsuptemp", "micinfpar", "micalc", "subratio", "CA1ratio", "CA23ratio", "CA4ratio", "AT8_total", "agecogsx", "cogdecage", "mincogage", "disdur")
+#all binary are no == 0 and yes == 1
+binary <- c("DementiaHx", "ParknismHx", "nphemo", "npold", "nppath", "nptdpb", "nptdpc", "nptdpe", "npftdtau", "PathAD", "PathFTD", "CTE", "csparCTE", "sleepact", "Group_de", "TMEM106B_dom", "TMEM106B_invrec")
+#PathLBD can be converted to binary
+#categorical <- c(apoe, race, nphipscl, nplbod, PathLBD, PathMND, sport, Group, rs1990622, rs3173615)
+ordinal <- c("CTEStage", "npavas", "npwmr", "npbraak", "npneur", "npadnc", "npdiff", "npamy", "nparter")
+#not_sure <- c(npold1, npold2, npold3, npold4, npoldd1, npoldd2, npoldd3, npoldd4, locratio)
+#not_using <- c(nppath6, nppick, npftdt2, npcort, npprog, npftdt5, npftdt8, npftdt9, npftdt10, npftdtdp, npoftd, PathPrion, sleepcb, suicide, Batch, Year, npoldd)
+
+
+
+
+#for (i in colnames(nes_clust_order_meta)) {
+#  print(i)
+#  print(is.numeric(nes_clust_order_meta[[i]]))
+#  print(is.na(nes_clust_order_meta[[i]]))
+#}
+
+
+ 
+
+cor_meta_nes_order <- cor(nes_clust_order_meta, use='pairwise.complete.obs')
+#cor_all_cnt_bi_ord <- cor(all_cnt_bi_ord, use = 'pairwise.complete.obs')
+pdf("/restricted/projectnb/cteseq/jrose/cte_corr_work/meta_corr_totyrs.pdf")
+corrplot(cor_meta_nes_order, tl.cex = 0.5, number.cex = 0.5)
+dev.off()
+#corrplot(cor_all_cnt_bi_ord, order = 'hclust', tl.cex = 0.6, number.cex = 0.5)
+```
+l2fc correlation
+```{r}
+all_deseq_results_l2fc <- lapply(
+  deseq_obj_names,
+  function(result_name) {
+    results_c <- results(cte_deseq_obj[[result_name]])
+    results_sig <- subset(results_c, padj < 0.05)
+    results_sig <- results_sig[order(results_sig$pvalue), ]
+    factor_df <- data.frame(ENSGID = rownames(results_sig), baseMean = results_sig$baseMean, log2FoldChange = results_sig$log2FoldChange, lfcSE = results_sig$lfcSE, stat = results_sig$stat, pvalue = results_sig$pvalue, padj = results_sig$padj)
+    return(factor_df)
+    })
+names(all_deseq_results_l2fc) <- deseq_obj_names
+
+#Removes dots in ENSGID IDs
+for (i in deseq_obj_names) {
+  all_deseq_results_l2fc[[i]]$rownames <- gsub("\\.\\d+$", "", all_deseq_results_l2fc[[i]]$ENSGID)
+}
+
+
+ensg_ids <- all_deseq_results_l2fc$DementiaHx$rownames
+ensembl.con <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl")
+gene_map <- getBM(attributes = c("ensembl_gene_id", "external_gene_name"),
+      filters = "ensembl_gene_id",
+      values = ensg_ids,
+      mart = ensembl.con)
+
+
+#Converts ENSGIDs to gene symbols using map
+for (i in seq_along(all_deseq_results_l2fc)) {
+  all_deseq_results_l2fc[[i]] <- merge(all_deseq_results_l2fc[[i]], gene_map, by.x ="rownames", by.y ="ensembl_gene_id", all.x = TRUE)
+  all_deseq_results_l2fc[[i]] <- all_deseq_results_l2fc[[i]][complete.cases(all_deseq_results_l2fc[[i]]$external_gene_name) & all_deseq_results_l2fc[[i]]$external_gene_name != "", ]
+  rownames(all_deseq_results_l2fc[[i]]) <- make.unique(as.character(all_deseq_results_l2fc[[i]]$external_gene_name))
+  all_deseq_results_l2fc[[i]] <- subset(all_deseq_results_l2fc[[i]], select = -c( rownames, external_gene_name))
+}
+
+#A list of unique genes represented in at least one factor by significance
+all_results_sig <- lapply(
+  deseq_obj_names,
+  function(result_name) {
+    results_c <- results(cte_deseq_obj[[result_name]])
+    results_sig <- subset(results_c, padj < 0.05)
+    results_sig <- results_sig[order(results_sig$pvalue), ]
+    genes <- data.frame(ENSGID = rownames(results_sig), result_name = results_sig$padj)
+    colnames(genes)[2] <- result_name
+    return(genes)
+    })
+#assigns names to each result object
+names(all_results_sig) <- deseq_obj_names
+#uses tidyverse to reduce list of DF to one, joining by ENSGID
+results_combined <- all_results_sig %>% reduce(full_join, by="ENSGID")
+#assign rownames 
+rownames(results_combined) <- results_combined$ENSGID
+#Making a gene map and assigning symbols to all_results_sig
+gene_ids_sig <- unique(unlist(lapply(
+  all_results_sig,
+  function(i)
+    i$ENSGID
+)))
+
+#makes dataframes in a similar format to deseq2 result objects, but only includes genes that are significantly represented in at least 1 design factor
+
+all_results_df <- lapply(
+  deseq_obj_names,
+  function(result_name) {
+    results_c <- results(cte_deseq_obj[[result_name]])
+    factor_df <- data.frame(ENSGID = rownames(results_c), baseMean = results_c$baseMean, log2FoldChange = results_c$log2FoldChange, lfcSE = results_c$lfcSE, stat = results_c$stat, pvalue = results_c$pvalue, padj = results_c$padj)
+    factor_df <- factor_df[order(factor_df$stat), ]
+    factor_df <- factor_df[factor_df$ENSGID %in% gene_ids_sig,]
+    return(factor_df)
+    })
+names(all_results_df) <- deseq_obj_names
+```
+
+Plotting l2fc
+```{r}
+all_results_df_test <- lapply(
+  deseq_obj_names,
+  function(result_name) {
+    results_c <- results(cte_deseq_obj[[result_name]])
+    factor_df <- data.frame(ENSGID = rownames(results_c), result_name = results_c$log2FoldChange)
+    colnames(factor_df)[2] <- result_name
+    factor_df <- factor_df[factor_df$ENSGID %in% gene_ids_sig,]
+    return(factor_df)
+    })
+names(all_results_df_test) <- deseq_obj_names
+
+
+results_combined_test <- all_results_df_test %>% reduce(full_join, by="ENSGID")
+rownames(results_combined_test) <- results_combined_test$ENSGID
+results_combined_test <- subset(results_combined_test, select = -c(ENSGID))
+
+
+cor_test <- cor(results_combined_test)
+cor_table <- gt(as.data.frame(cor_test, rownames = TRUE), rownames_to_stub = TRUE)
+corrplot(cor_test, order = 'alphabet', tl.cex = 0.8, number.cex = 0.5)
+#cl.cex for color labels
+#Plot only includes l2fc of genes that are significantly represented in at least 1 design factor
+```
+
+

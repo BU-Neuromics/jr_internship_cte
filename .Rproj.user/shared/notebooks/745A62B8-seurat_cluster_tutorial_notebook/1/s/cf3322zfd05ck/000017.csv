@@ -1,0 +1,2 @@
+"0","ftplot <- FeatureScatter(obj, feature1 = ""nCount_RNA"", feature2 = ""nFeature_RNA"")"
+"0","ftplot"

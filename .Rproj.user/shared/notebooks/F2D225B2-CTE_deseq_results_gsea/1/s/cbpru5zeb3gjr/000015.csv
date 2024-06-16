@@ -1,0 +1,5 @@
+"0","gmt_file <- readGmt(""/restricted/projectnb/cteseq/jrose/c2.all.v2023.2.Hs.symbols.gmt"")
+"
+"2","Error in readGmt(""/restricted/projectnb/cteseq/jrose/c2.all.v2023.2.Hs.symbols.gmt"") : 
+  could not find function ""readGmt""
+"

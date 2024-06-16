@@ -1,0 +1,140 @@
+
+
+```{r}
+library(haven)
+library(readxl)
+```
+Data import/prep
+```{r}
+#SLI-85 has conflicting CTEStage and Group info. CTEStage 2 but Group 3
+#K-0018 CTEStage 3 but Group 2
+#SLI-116 is CTEStage 1 but Group 1
+
+#!!!File import/Prep!!!
+ca1_meta <- read_excel("/restricted/projectnb/cteseq/jrose/meta_imputation/Multiregion AT8 densities.xlsx")
+csv_meta <- read.csv("/restricted/projectnb/cteseq/projects/CTE_data_processing/all_meta.csv")
+counts <- read.csv("/restricted/projectnb/cteseq/projects/CTE_data_processing/all_counts.csv")
+AT8_ex_data <- read.csv("/restricted/projectnb/cteseq/jrose/cte_DLFCWSAT8.csv")[ ,2:3]
+cte_missing_data <- read_excel("/restricted/projectnb/cteseq/projects/CTE_data_processing/09.28.2023_dataset/CTE CASES FOR MISSING APOE AND TMEM.xlsx")
+sav_meta <- read_sav("/restricted/projectnb/cteseq/jrose/RNAsequence.sav")
+
+#Fixes a mismatched sample name
+sav_meta$subjid <- gsub("BVAX81", "BVAX081", sav_meta$subjid)
+#Changes format to match other rs value
+sav_meta$rs3173615 <- gsub("C", "C:C", sav_meta$rs3173615)
+sav_meta$rs3173615 <- gsub("G", "G:G", sav_meta$rs3173615)
+sav_meta$rs3173615 <- gsub("C:CG:G", "C:G", sav_meta$rs3173615)
+#renamed for ease of merging
+colnames(cte_missing_data)[1] = "subjid"
+colnames(cte_missing_data)[2] = "apoe"
+colnames(cte_missing_data)[3] = "rs3173615"
+#Merge cte_missing_data into spss_meta file.
+sav_meta <- merge(sav_meta, cte_missing_data, by = "subjid", all.x = TRUE)
+sav_meta$rs3173615 <- ifelse(sav_meta$rs3173615.x == "" & sav_meta$rs3173615.y != "", sav_meta$rs3173615.y, sav_meta$rs3173615.x)
+sav_meta$apoe <- ifelse(is.na(sav_meta$apoe.x) & sav_meta$apoe.y != "", sav_meta$apoe.y, sav_meta$apoe.x)
+sav_meta <- subset(sav_meta, select = -c(apoe.x, apoe.y, rs3173615.x, rs3173615.y))
+#Merge in additional AT8 data
+AT8_ex_data$subjid <- gsub("K", "K-", AT8_ex_data$subjid)
+AT8_ex_data$subjid <- gsub("SLI", "SLI-", AT8_ex_data$subjid)
+AT8_ex_data$subjid <- gsub("SLI-0", "SLI-", AT8_ex_data$subjid)
+sav_merged <- merge(sav_meta, AT8_ex_data, by = "subjid")
+#Clean ca1 meta data and merge
+ca1_meta$ID <- gsub('K', 'K-', ca1_meta$ID)
+ca1_meta$ID <- gsub('SLI', 'SLI-', ca1_meta$ID)
+sav_merged <- merge(sav_merged, ca1_meta, by.x = "subjid", by.y = "ID", all.x = TRUE)
+
+#!!!Counts!!!
+#Sets counts gene names (X) to row names, then removing that column
+rownames(counts) <- counts$X
+counts <- subset(counts, select = -X)
+#Filters out gene names that have 150 or more zeros
+filter_metric <- rowSums(counts == 0) < 150
+#filter_metric <- rowSums(counts >= 10)
+filtered_counts <- counts[filter_metric,]
+#Sorts column names alphabetically for deseq
+filtered_counts <- filtered_counts[, order(names(filtered_counts))]
+
+
+
+#!!!Creating merged meta file and transforming data!!!
+#substitutes K values with only 3 digits after "K-" to have a 0 in front of them
+csv_meta$Sample_ID <- gsub("^K-(\\d{3})", "K-0\\1", csv_meta$Sample_ID)
+#Does the same as above, but for SampleName instead of Sample_ID.
+csv_meta$SampleName <- gsub("^K-(\\d{3}$)", "K-0\\1", csv_meta$SampleName)
+#changes Corde_ID in CSV to line up with counts file. Example: ST_AN_K-688 to ST_AN_K.688
+csv_meta$Core_ID <- gsub("^ST_AN_K-", "ST_AN_K.", csv_meta$Core_ID)
+csv_meta$Core_ID <- gsub("^ST_AN_SLI-", "ST_AN_SLI.", csv_meta$Core_ID)
+#Changing the value of 7 to NA in npbraak. It seems odd with a continuous model and only has one person
+sav_merged$npbraak <- gsub("7", NA, sav_merged$npbraak)
+#Merges meta data files. 
+csv_meta <- csv_meta[,c("SampleName", "RIN", "Core_ID", "Batch", "Year")]
+merged_meta <- merge(csv_meta, sav_merged, by.x = "SampleName", by.y = "subjid")
+#Transforming apoe, Group/CTE and tmem
+merged_meta$DLFC.WS.AT8..cell.mm2 <- gsub("#N/A", NA, merged_meta$DLFC.WS.AT8..cell.mm2)
+merged_meta$Group_de <- ifelse(merged_meta$CTEStage %in% c(0,1,2), "low", ifelse(merged_meta$CTEStage %in% c(3,4), "high", NA))
+merged_meta$apoe_de <- ifelse(merged_meta$apoe %in% c(24, 34, 44), 1, 0)
+merged_meta$apoe_de <- ifelse(merged_meta$apoe %in% c(24, 34, 44), 1, 0)
+merged_meta$TMEM106B_dom <- ifelse(merged_meta$rs3173615 %in% c("C:C", "C:G"), 1, ifelse(merged_meta$rs3173615 == "G:G", 0, NA))
+merged_meta$TMEM106B_invrec <- ifelse(merged_meta$rs3173615 == "C:C", 1, ifelse(merged_meta$rs3173615 %in% c("G:G", "C:G"), 0, NA))
+#Sorts Core_ID alphabetically
+merged_meta <- merged_meta[order(merged_meta[["Core_ID"]]), ]
+#Sets Core_ID to row names for deseq2 #rownames(merged_meta) <- merged_meta$Core_ID
+#AT8log
+merged_meta$AT8sulcusLog <- log(merged_meta$AT8sulcus)
+merged_meta$AT8crestLog <- log(merged_meta$AT8crest)
+
+
+
+#!!!Filtering meta file!!!
+#Turns AT8 Extra data into numeric instead of characters
+merged_meta$DLFC.WS.AT8..cell.mm2 <- as.numeric(merged_meta$DLFC.WS.AT8..cell.mm2)
+merged_meta$AT8_total <- merged_meta$DLFC.WS.AT8..cell.mm2
+merged_meta <- subset(merged_meta, select = -c(DLFC.WS.AT8..cell.mm2))
+#rearrange factor levels. Only binary category to have reversed factors by default. Others are fine
+merged_meta$Group_de <- factor(merged_meta$Group_de, levels = c("low", "high"))
+merged_meta$Batch <- as.factor(merged_meta$Batch)
+merged_meta$Year<- as.factor(merged_meta$Year)
+
+
+
+#!!!categorizing data columns by type!!!
+col_continuous <- c("aestot", "footyrs", "AFE", "bistot", "tbri", "tmi", "tgec", "maxaggsum", 
+                    "CDStot", "chii_f", "chii_r", "chii_g", "faqtot", "GDStot", "subratio", "CA1ratio", "CA23ratio", "CA4ratio", 
+                    "agecogsx", "cogdecage", "mincogage", "disdur", "AT8_total")
+
+col_binary <- c("DementiaHx", "ParknismHx", "nphemo", "npold", "nppath", 
+                                 "nptdpb", "nptdpc", "nptdpe", "npftdtau", "PathAD", "PathFTD", 
+                                 "CTE", "csparCTE", "sleepact", "Group_de", "TMEM106B_dom", "TMEM106B_invrec")
+for (i in col_binary) {
+  merged_meta[[i]] <- as.factor(merged_meta[[i]])
+}
+
+col_ordinal <- c("CTEStage", "npavas", "npwmr", "npbraak", "npneur", "npadnc", "npdiff", "npamy", "nparter")
+
+for (i in col_ordinal) {
+  merged_meta[[i]] <- as.factor(merged_meta[[i]])
+}
+
+col_exclude <- c("SampleName", "RIN", "Core_ID", "race", "nphemo", "npold1", "npold2", "npold3", "npold4",
+                 "npoldd1", "npoldd2", "npoldd3", "npoldd4", "nppath6", "nppick", "npftdt2", "npcort", 
+                 "npprog", "npftdt5", "npftdt8", "npftdt9", "npftdt10", "npftdtdp", "micdorfront", "micinfpar", 
+                 "micalc", "locratio", "subratio", "CA1ratio", "CA23ratio", "CA4ratio", "sport", "rs1990622", 
+                 "rs3173615", "apoe", "PathPrion", "npoftd", "micsuptemp", "PathMND", "AT8sulcus", "AT8crest", "chii_r")
+
+#categorical <- c(apoe, race, nphipscl, nplbod, PathLBD, PathMND, sport, Group, rs1990622, rs3173615)
+
+#not_using <- c(nppath6, nppick, npftdt2, npcort, npprog, npftdt5, npftdt8, npftdt9, npftdt10, npftdtdp, npoftd, PathPrion, sleepcb, suicide, Batch, Year, npoldd, npold1, npold2, npold3, npold4, npoldd1, npoldd2, npoldd3, npoldd4, locratio)
+
+merged_meta$sport <- as.factor(merged_meta$sport)
+merged_meta$cod <- as.factor(merged_meta$cod)
+merged_meta$PathLBD <- as.factor(merged_meta$PathLBD)
+merged_meta$nplbod <- as.factor(merged_meta$nplbod)
+merged_meta$npold1 <- as.factor(merged_meta$npold1)
+merged_meta$npold2 <- as.factor(merged_meta$npold2)
+merged_meta$npold3 <- as.factor(merged_meta$npold3)
+merged_meta$npold4 <- as.factor(merged_meta$npold4)
+
+
+saveRDS(merged_meta, "/restricted/projectnb/cteseq/jrose/meta_imputation/merged_meta.rds")
+
+```

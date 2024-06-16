@@ -1,0 +1,10 @@
+!/bin/bash
+#$ -P cteseq
+#$ -l h_rt=72:00:00
+#$ -pe omp 16
+#$ -j y
+#$ -V
+ 
+cd /restricted/projectnb/cteseq/jrose/meta_imputation
+module load R
+Rscript chiif_dredge.R

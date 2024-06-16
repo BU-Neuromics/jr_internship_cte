@@ -1,0 +1,6 @@
+"0","lapply("
+"0","  all_obj_names,"
+"0","  function(i) {"
+"0","    assign(i, all_results_cleaned[[i]], envir = .GlobalEnv)})"
+"1","[[1]]
+"

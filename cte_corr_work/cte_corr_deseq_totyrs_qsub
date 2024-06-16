@@ -1,0 +1,9 @@
+#!/bin/bash
+#$ -P cteseq
+#$ -pe omp 16
+#$ -j y
+#$ -V
+ 
+cd /restricted/projectnb/cteseq/jrose/cte_corr_work
+module load R
+Rscript cte_run_deseq_ARYtotyrs.R

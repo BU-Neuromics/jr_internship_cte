@@ -1,0 +1,236 @@
+
+
+
+```{r, echo=FALSE}
+library(DESeq2)
+library(dplyr)
+library(biomaRt)
+library(tidyverse)
+library(pheatmap)
+```
+
+```{r}
+dds_ART<- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ART_model.rds")
+dds_ARTB <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTB_model.rds")
+dds_ARTY <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTY_model.rds")
+dds_ARTBY <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTBY_model.rds")
+dds_ARTB_2018 <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTB_2018_model.rds")
+dds_ARTB_2021 <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTB_2021_model.rds")
+
+dds_ARTB_group_high <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTB_group_high_model.rds")
+dds_ARTB_group_low <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTB_group_low_model.rds")
+dds_ARTB_group_high_2018 <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTB_group_high_2018_model.rds")
+dds_ARTB_group_high_2021 <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTB_group_high_2021_model.rds")
+dds_ARTB_group_low_2018 <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTB_group_low_2018_model.rds")
+dds_ARTB_group_low_2021 <- readRDS("/restricted/projectnb/cteseq/jrose/results/cte_deseq_output_ARTB_group_low_2021_model.rds")
+
+dds_list <- list(dds_ART, dds_ARTB, dds_ARTY, dds_ARTBY, dds_ARTB_2018, dds_ARTB_2021, dds_ARTB_group_high, dds_ARTB_group_low, dds_ARTB_group_high_2018, dds_ARTB_group_high_2021, dds_ARTB_group_low_2018, dds_ARTB_group_low_2021)
+names(dds_list) <- c("dds_ART", "dds_ARTB", "dds_ARTY", "dds_ARTBY", "dds_ARTB_2018", "dds_ARTB_2021", "dds_ARTB_group_high", "dds_ARTB_group_low", "dds_ARTB_group_high_2018", "dds_ARTB_group_high_2021", "dds_ARTB_group_low_2018", "dds_ARTB_group_low_2021")
+dds_list_names <- names(dds_list)
+```
+
+Create deseq results list and gene mapping
+```{r}
+dds_list_results <- lapply(
+  dds_list_names,
+  function(i) {
+    dds_res <- results(dds_list[[i]])
+    dds_list_df <- data.frame(ENSGID = rownames(dds_res), baseMean = dds_res$baseMean, log2FoldChange = dds_res$log2FoldChange, lfcSE = dds_res$lfcSE, stat = dds_res$stat, pvalue = dds_res$pvalue, padj = dds_res$padj)
+    dds_list_df$ENSGID <- sub("\\..*$", "", dds_list_df$ENSGID)
+    return(dds_list_df)
+  })
+names(dds_list_results) <- dds_list_names
+
+#makes vector of ENSGIDs for mapping
+ENSG_IDs <- dds_list_results$dds_ART$ENSGID
+
+#Creates a mart object for creating the gene map.
+ensembl.con <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl")
+gene_map <- getBM(attributes = c("ensembl_gene_id", "external_gene_name"),
+      filters = "ensembl_gene_id",
+      values = ENSG_IDs,
+      mart = ensembl.con)
+
+dds_list_results_with_symbols <- lapply (
+  dds_list_names,
+  function(i) {
+    dds_with_symbols <- merge(dds_list_results[[i]], gene_map, by.x = "ENSGID", by.y = "ensembl_gene_id", all.x = TRUE)
+    return(dds_with_symbols)
+  })
+names(dds_list_results_with_symbols) <- dds_list_names
+```
+
+Subset sig genes
+```{r}
+dds_list_results_with_symbols_05 <- lapply (
+  dds_list_names,
+  function(i) {
+    sig_05 <- subset(dds_list_results_with_symbols[[i]], padj < 0.05)
+    return(sig_05)
+  })
+names(dds_list_results_with_symbols_05) <- dds_list_names
+
+dds_list_results_with_symbols_10 <- lapply (
+  dds_list_names,
+  function(i) {
+    sig_10 <- subset(dds_list_results_with_symbols[[i]], padj < 0.1)
+    return(sig_10)
+  })
+names(dds_list_results_with_symbols_10) <- dds_list_names
+
+dds_list_results_with_symbols_25 <- lapply (
+  dds_list_names,
+  function(i) {
+    sig_25 <- subset(dds_list_results_with_symbols[[i]], padj < 0.25)
+    return(sig_25)
+  })
+names(dds_list_results_with_symbols_25) <- dds_list_names
+
+#Create table showing number of sig degs
+sig_num <- data.frame( row.names = dds_list_names)
+for (i in dds_list_names) {
+  sig_num[i, "0.05"] <- nrow(dds_list_results_with_symbols_05[[i]])
+  sig_num[i, "0.10"] <- nrow(dds_list_results_with_symbols_10[[i]])
+  sig_num[i, "0.25"] <- nrow(dds_list_results_with_symbols_25[[i]])
+}
+
+```
+
+Plotting Prep 
+```{r}
+plot_prep_05 <- lapply (
+  dds_list_names,
+  function(i) {
+    sub_dds <- subset(dds_list_results_with_symbols_05[[i]], select = c(external_gene_name, log2FoldChange))
+    sub_dds <- sub_dds[dds_list_results_with_symbols_05[[i]]$external_gene_name != "", ]
+  })
+names(plot_prep_05) <- dds_list_names
+
+plot_prep_10 <- lapply (
+  dds_list_names,
+  function(i) {
+    sub_dds <- subset(dds_list_results_with_symbols_10[[i]], select = c(external_gene_name, log2FoldChange))
+  })
+names(plot_prep_10) <- dds_list_names
+
+plot_prep_25 <- lapply (
+  dds_list_names,
+  function(i) {
+    sub_dds <- subset(dds_list_results_with_symbols_25[[i]], select = c(external_gene_name, log2FoldChange))
+  })
+names(plot_prep_25) <- dds_list_names
+
+
+
+
+
+sum(duplicated(dds_list_results_with_symbols$dds_ART$external_gene_name))
+
+test <- dds_list_results_with_symbols$dds_ART$external_gene_name
+
+
+
+
+
+#plot for ATB group high vs low
+ATB_high_vs_low <- merge(plot_prep_05$dds_ARTB_group_low, plot_prep_05$dds_ARTB_group_high, by = "external_gene_name")
+plot_prep_05$dds_ARTB_group_low
+plot_prep_05$dds_ARTB_group_high
+
+plot_prep_05$dds_ARTB_group_low_2018
+plot_prep_05$dds_ARTB_group_high_2018
+
+plot_prep_05$dds_ARTB_group_low_2021
+plot_prep_05$dds_ARTB_group_high_2021
+
+
+
+merged_group <- merge(sig_high_hm, sig_low_hm, by = "external_gene_name", all = TRUE)
+
+ggplot(data = merged_group, aes(x = log2FoldChange.x, y = log2FoldChange.y)) + geom_point()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Plot high/low /w at8 total for 2018
+```{r}
+sig_low_hm_2018 <- subset(sig_low_2018, select = c(external_gene_name, log2FoldChange))
+sig_low_hm_2018 <- sig_low_hm_2018[ sig_low_hm_2018$external_gene_name != "", ]
+#rownames(sig_low_hm_2018) <- make.unique(as.character(sig_low_hm_2018$external_gene_name))
+#sig_low_hm_2018 <- subset(sig_low_hm_2018, select = -c(external_gene_name))
+
+
+sig_high_hm_2018 <- subset(sig_high_2018, select = c(external_gene_name, log2FoldChange))
+sig_high_hm_2018 <- sig_high_hm_2018[sig_high_hm_2018$external_gene_name != "", ]
+#rownames(sig_high_hm_2018) <- make.unique(as.character(sig_high_hm_2018$external_gene_name))
+#sig_high_hm_2018 <- subset(sig_high_hm_2018, select = -c(external_gene_name))
+
+merged_group_2018 <- merge(sig_high_hm_2018, sig_low_hm_2018, by = "external_gene_name", all = TRUE)
+
+ggplot(data = merged_group_2018, aes(x = log2FoldChange.x, y = log2FoldChange.y)) + geom_point()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Plot high/low /w at8 total for 2021
+```{r}
+sig_low_hm_2021 <- subset(sig_low_2021, select = c(external_gene_name, log2FoldChange))
+sig_low_hm_2021 <- sig_low_hm_2021[sig_low_hm_2021$external_gene_name != "", ]
+#rownames(sig_low_hm_2021) <- make.unique(as.character(sig_low_hm_2021$external_gene_name))
+#sig_low_hm_2021 <- subset(sig_low_hm_2021, select = -c(external_gene_name))
+
+
+sig_high_hm_2021 <- subset(sig_high_2021, select = c(external_gene_name, log2FoldChange))
+sig_high_hm_2021 <- sig_high_hm_2021[sig_high_hm_2021$external_gene_name != "", ]
+#rownames(sig_high_hm_2021) <- make.unique(as.character(sig_high_hm_2021$external_gene_name))
+#sig_high_hm_2021 <- subset(sig_high_hm_2021, select = -c(external_gene_name))
+
+merged_group_2021 <- merge(sig_high_hm_2021, sig_low_hm_2021, by = "external_gene_name", all = TRUE)
+
+ggplot(data = merged_group_2021, aes(x = log2FoldChange.x, y = log2FoldChange.y)) + geom_point()
+```
+
+
+
+
+

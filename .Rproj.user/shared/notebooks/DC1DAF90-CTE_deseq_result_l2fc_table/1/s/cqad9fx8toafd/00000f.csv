@@ -1,0 +1,5 @@
+"0","#col_remove = c(""cogdecage"", ""DLFC.WS.AT8..cell.mm2"", ""npold"", ""npoldd"")"
+"0","#comb_results_all <- comb_results_all[setdiff(names(comb_results_all), col_remove)]"
+"0","comb_results_05 <- comb_results_05[setdiff(names(comb_results_05), col_remove)]"
+"2","Error in as.vector(y) : object 'col_remove' not found
+"

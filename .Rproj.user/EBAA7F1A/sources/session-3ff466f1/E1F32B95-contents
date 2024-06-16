@@ -1,0 +1,107 @@
+---
+title: L2FC Tables
+output: html_document
+date: 
+---
+
+```{r}
+categorical_deseq_results <- readRDS("/restricted/projectnb/cteseq/jrose/cte_deseq_output_cat.rds")
+continuous_deseq_results <- readRDS("/restricted/projectnb/cteseq/jrose/cte_deseq_output_cont.rds")
+
+```
+
+```{r}
+library(DESeq2)
+library(dplyr)
+library(biomaRt)
+library(tidyverse)
+
+combined_res_obj <- c(categorical_deseq_results, continuous_deseq_results)
+comb_res_names <- names(combined_res_obj)
+```
+
+applying the DESeq2 results() function on each RDS object via lapply
+Categorical data first
+```{r}
+comb_results_05 <- lapply(
+  comb_res_names,
+  function(result_name) {
+    results_c <- results(combined_res_obj[[result_name]])
+    results_sig <- subset(results_c, padj < 0.05)
+    results_sig <- results_sig[order(results_sig$pvalue), ]
+    return(results_sig)
+    })
+names(comb_results_05) <- comb_res_names
+
+comb_results_10 <- lapply(
+  comb_res_names,
+  function(result_name) {
+    results_c <- results(combined_res_obj[[result_name]])
+    results_sig <- subset(results_c, padj < 0.1)
+    results_sig <- results_sig[order(results_sig$pvalue), ]
+    return(results_sig)
+    })
+names(comb_results_10) <- comb_res_names
+
+comb_results_25 <- lapply(
+  comb_res_names,
+  function(result_name) {
+    results_c <- results(combined_res_obj[[result_name]])
+    results_sig <- subset(results_c, padj < 0.25)
+    results_sig <- results_sig[order(results_sig$pvalue), ]
+    return(results_sig)
+    })
+names(comb_results_25) <- comb_res_names
+```
+Not needed unless all results need to be placed into seperate DFs in the environment
+```{r}
+lapply(
+  comb_res_names,
+  function(result_name) {
+    assign(result_name, as_tibble(comb_results_05[[result_name]], rownames = "ENSGID"), envir = .GlobalEnv
+           )
+  }
+)
+
+```
+Creating the table of all l2fc
+```{r}
+col_remove = c("cogdecage", "DLFC.WS.AT8..cell.mm2", "npold", "npoldd")
+comb_results_05 <- comb_results_05[setdiff(names(comb_results_05), col_remove)]
+comb_results_10 <- comb_results_10[setdiff(names(comb_results_10), col_remove)]
+comb_results_25 <- comb_results_25[setdiff(names(comb_results_25), col_remove)]
+comb_res_names <- names(comb_results_05)
+
+columns = c("min_05", "min_10", "min_25", "max_05", "max_10", "max_25", "median_05", "median_10", "median_25", "number_sig_genes_05", "number_sig_genes_10", "number_sig_genes_25")
+l2fc_table <- data.frame( matrix(nrow=1, ncol= length(columns)))
+colnames(l2fc_table) = columns
+
+for (i in seq_along(comb_res_names)) {
+  row_index <- i
+  
+  l2fc_table[i, "min_05"] <- min(comb_results_05[[i]]$log2FoldChange)
+  l2fc_table[i, "max_05"] <- max(comb_results_05[[i]]$log2FoldChange)
+  l2fc_table[i, "median_05"] <- median(comb_results_05[[i]]$log2FoldChange)
+  l2fc_table[i, "number_sig_genes_05"] <- nrow(comb_results_05[[i]])
+
+}
+
+for (i in seq_along(comb_res_names)) {
+  row_index <- i
+  
+  l2fc_table[i, "min_10"] <- min(comb_results_10[[i]]$log2FoldChange)
+  l2fc_table[i, "max_10"] <- max(comb_results_10[[i]]$log2FoldChange)
+  l2fc_table[i, "median_10"] <- median(comb_results_10[[i]]$log2FoldChange)
+  l2fc_table[i, "number_sig_genes_10"] <- nrow(comb_results_10[[i]])
+}
+
+for (i in seq_along(comb_res_names)) {
+  row_index <- i
+  l2fc_table[i, "min_25"] <- min(comb_results_25[[i]]$log2FoldChange)
+  l2fc_table[i, "max_25"] <- max(comb_results_25[[i]]$log2FoldChange)
+  l2fc_table[i, "median_25"] <- median(comb_results_25[[i]]$log2FoldChange)
+  l2fc_table[i, "number_sig_genes_25"] <- nrow(comb_results_25[[i]])
+}
+
+rownames(l2fc_table) <- comb_res_names
+```

@@ -1,0 +1,239 @@
+```{r, include=FALSE}
+library(mice)
+set.seed(123)
+```
+
+chiif using BIC selections
+```{r}
+merged_meta <- readRDS("/restricted/projectnb/cteseq/jrose/meta_imputation/merged_meta.rds")
+rownames(merged_meta) <- merged_meta$SampleName
+sub_chiif <- subset(merged_meta, select = c("SampleName", "chii_f", "sport", "totyrs", "AFE"))
+sub_chiif_2 <- subset(merged_meta, select = c("SampleName", "chii_f", "sport", "apoe", "totyrs", "AFE"))
+sub_chiif_3 <- subset(merged_meta, select = c("SampleName", "chii_f", "sport", "AT8_total", "apoe", "totyrs", "AFE"))
+
+data_chiif <- sub_chiif[,2:ncol(sub_chiif)]
+data_chiif_2 <- sub_chiif_2[,2:ncol(sub_chiif_2)]
+data_chiif_3 <- sub_chiif_3[,2:ncol(sub_chiif_3)]
+
+#Sets linear regression model used in imputation predictions. Gives a summary of model influences on a covariate being imputed
+model_chiif <- lm(chii_f ~ sport + totyrs + AFE, data = data_chiif)
+model_chiif_2 <- lm(chii_f ~ sport + apoe + totyrs + AFE, data = data_chiif_2)
+model_chiif_3 <- lm(chii_f ~ sport + AT8_total + apoe + totyrs + AFE, data = data_chiif_3)
+summary(model_chiif)
+summary(model_chiif_2)
+summary(model_chiif_3)
+
+
+
+
+#creates imputation object to be used for altering prediction matrix
+imp <- mice(data_chiif, maxit = 0)
+#saves prediction matrix
+pred <- imp$pred
+pred
+#Sets prediction matrix to 0, which is a binary choice. 0 means those values will still be imputed, but will not influence imputation of other values. This helped with the singularity issue
+pred[ ,c("chii_f")] <- 0
+pred
+#runs a new imputation using the altered prediction matrix 
+imp <- mice(data_chiif, pred=pred)
+
+plot(imp)
+
+#Extends iteration of existing imputation
+imp <- mice.mids(imp, maxit=35)
+#plot(test)
+
+#See where imputated values are for each iteration for a specific covariate
+stripplot(imp, chii_f~.imp, pch=20, cex=2)
+#Gives all imputes. No option to specify covariates at this time
+stripplot(imp)
+
+
+#regression on imputed dataset using totyrs and AFE as predictor/independent. need to revisit to better understand what's going on here
+fit_f <- with(imp, lm(chii_f ~ sport + totyrs + AFE))
+
+
+#pools regressions. need to revisit to better understand what's going on here
+pool_fit_f <- pool(fit_f)
+
+print("chii_f")
+pool_fit_f
+summary(pool_fit_f)
+
+```
+chiif using AIC selections
+```{r, include=FALSE}
+merged_meta <- readRDS("/restricted/projectnb/cteseq/jrose/meta_imputation/merged_meta.rds")
+rownames(merged_meta) <- merged_meta$SampleName
+sub_chiif <- subset(merged_meta, select = c("SampleName", "chii_f", "sport", "npavas", "ParknismHx", "npadnc", "PathAD", "apoe", "npdiff", "totyrs", "AFE"))
+sub_chiif_2 <- subset(merged_meta, select = c("SampleName", "chii_f", "sport", "npavas", "ParknismHx", "npadnc", "PathAD", "apoe", "npdiff", "totyrs", "AFE", "AT8_total"))
+sub_chiif_3 <- subset(merged_meta, select = c("SampleName", "chii_f", "sport", "npavas", "ParknismHx", "npadnc", "PathAD", "apoe", "npdiff", "totyrs", "AFE", "AT8_total", "apoe_de"))
+
+
+
+data_chiif <- sub_chiif[,2:ncol(sub_chiif)]
+data_chiif_2 <- sub_chiif_2[,2:ncol(sub_chiif_2)]
+data_chiif_3 <- sub_chiif_3[,2:ncol(sub_chiif_3)]
+
+#Sets linear regression model used in imputation predictions. Gives a summary of model influences on a covariate being imputed
+model_chiif <- lm(chii_f ~ sport + npavas + ParknismHx + npadnc + PathAD + apoe + npdiff + totyrs + AFE, data = data_chiif)
+model_chiif_2 <- lm(chii_f ~ sport + npavas + ParknismHx + npadnc + PathAD + apoe + npdiff + totyrs + AFE + AT8_total, data = data_chiif_2)
+model_chiif_3 <- lm(chii_f ~ sport + npavas + ParknismHx + npadnc + PathAD + apoe + npdiff + totyrs + AFE + AT8_total + apoe_de, data = data_chiif_3)
+summary(model_chiif)
+summary(model_chiif_2)
+summary(model_chiif_3)
+
+```
+
+examining data
+```{r}
+merged_meta <- readRDS("/restricted/projectnb/cteseq/jrose/meta_imputation/merged_meta.rds")
+pre_dum_na <- subset(merged_meta, select = c("SampleName", "sport", "chii_f", "chii_g", "chii_r", "totyrs", "agedeath", "AFE"))
+pre_dum_na2 <- subset(merged_meta, select = c("SampleName", "sport", "chii_f", "chii_g", "chii_r", "totyrs", "AFE"))
+
+for (i in names(pre_dum_na)) {print(class(pre_dum_na[[i]]))}
+
+rownames(pre_dum_na) <- pre_dum_na$SampleName
+rownames(pre_dum_na2) <- pre_dum_na2$SampleName
+#removes non-football players for stronger imputation 
+pre_dum_na_football<- subset(pre_dum_na, pre_dum_na$sport == 1)
+pre_dum_na_football2<- subset(pre_dum_na2, pre_dum_na2$sport == 1)
+
+data <- pre_dum_na_football[,3:ncol(pre_dum_na_football)]
+data2 <- pre_dum_na_football2[,3:ncol(pre_dum_na_football2)]
+
+sample_names <- pre_dum_na_football$SampleName
+
+#Sets linear regression model used in imputation predictions. Gives a summary of model influences on a covariate being imputed
+fit_age_chii_g <- with(data, lm(chii_g ~ totyrs + agedeath))
+fit_afe_chii_g <- with(data, lm(chii_g ~ totyrs + AFE))
+fit_age_afe_chii_g <- with(data, lm(chii_g ~ totyrs + agedeath + AFE))
+summary(fit_age_chii_g)
+summary(fit_afe_chii_g)
+summary(fit_age_afe_chii_g)
+
+fit_age_chii_r <- with(data, lm(chii_r ~ totyrs + agedeath))
+fit_afe_chii_r <- with(data, lm(chii_r ~ totyrs + AFE))
+fit_age_afe_chii_r <- with(data, lm(chii_r ~ totyrs + agedeath + AFE))
+summary(fit_age_chii_r)
+summary(fit_afe_chii_r)
+summary(fit_age_afe_chii_r)
+
+fit_age_chii_f <- with(data, lm(chii_f ~ totyrs + agedeath))
+fit_afe_chii_f <- with(data, lm(chii_f ~ totyrs + AFE))
+fit_age_afe_chii_f <- with(data, lm(chii_f ~ totyrs + agedeath + AFE))
+summary(fit_age_chii_f)
+summary(fit_afe_chii_f)
+summary(fit_age_afe_chii_f)
+
+
+#creates imputation object to be used for altering prediction matrix
+imp <- mice(data, maxit = 0)
+#saves prediction matrix
+pred <- imp$pred
+pred
+#Sets prediction matrix to 0, which is a binary choice. 0 means those values will still be imputed, but will not influence imputation of other values. This helped with the singularity issue
+pred[ ,c("chii_f", "chii_g", "chii_r")] <- 0
+pred
+#runs a new imputation using the altered prediction matrix 
+imp <- mice(data, pred=pred)
+
+plot(imp)
+
+#Extends iteration of existing imputation
+#test <- mice.mids(imp, maxit=35)
+#plot(test)
+
+#See where imputated values are for each iteration for a specific covariate
+stripplot(imp, chii_f~.imp, pch=20, cex=2)
+stripplot(imp, chii_g~.imp, pch=20, cex=2)
+stripplot(imp, chii_r~.imp, pch=20, cex=2)
+#Gives all imputes. No option to specify covariates at this time
+stripplot(imp)
+
+
+
+
+
+
+
+#regression on imputed dataset using totyrs and AFE as predictor/independent. need to revisit to better understand what's going on here
+fit_g <- with(imp, lm(chii_g ~ totyrs + AFE))
+fit_f <- with(imp, lm(chii_f ~ totyrs + AFE))
+fit_r <- with(imp, lm(chii_r ~ totyrs + AFE))
+
+#pools regressions. need to revisit to better understand what's going on here
+pool_fit_g <- pool(fit_g)
+pool_fit_f <- pool(fit_f)
+pool_fit_r <- pool(fit_r)
+
+print("chii_g")
+pool_fit_g
+summary(pool_fit_g)
+
+print("chii_f")
+pool_fit_f
+summary(pool_fit_f)
+
+print("chii_r")
+pool_fit_r
+summary(pool_fit_r)
+```
+
+Imputation tasks 5/13
+
+```{r}
+merged_meta <- readRDS("/restricted/projectnb/cteseq/jrose/meta_imputation/merged_meta.rds")
+
+chiif_meta <- subset(merged_meta, select = c("SampleName", "chii_f", "sport", "npavas", "nphipscl", "npwmr", "ParknismHx", "Group_de", "sport", "csparCTE", "CTEStage", "PathFTD", "npadnc", "nppath", "npbraak", "PathAD", "cod", "AT8_total", "apoe_de", "apoe", "Group", "CTE", "PathLBD", "agedeath", "npftdtau", "nplbod", "nparter", "npold", "npold1", "npold2", "npold3", "npold4", "npamy", "npdiff", "npneur", "DementiaHx", "totyrs", "AFE", "Year"))
+
+rownames(chiif_meta) <- chiif_meta$SampleName
+
+data_chiif <- chiif_meta[,2:ncol(chiif_meta)]
+data_chiif <- subset(data_chiif, select = c(chii_f, sport, apoe, totyrs, AFE))
+
+#Sets linear regression model used in imputation predictions. Gives a summary of model influences on a covariate being imputed
+chiif_model <- lm(chii_f ~ sport + apoe + totyrs + AFE, data = data_chiif)
+
+summary(fit_chii_f)
+
+#creates imputation object to be used for altering prediction matrix
+imp_chiif <- mice(data_chiif, maxit = 0)
+
+#saves prediction matrix
+pred_chiif <- imp_chiif$pred
+pred_chiif
+
+#Sets prediction matrix values manually
+pred_chiif[ ,"chii_f"] <- 0
+pred_chiif
+
+#runs a new imputation using the altered prediction matrix. the mix of data types causes convergence error
+imp_chiif <- mice(data_chiif, pred=pred_chiif)
+
+plot(imp_chiif)
+
+#Extends iteration of existing imputation
+test <- mice.mids(imp_chiif, maxit=35)
+plot(test)
+
+#See where imputated values are for each iteration for a specific covariate
+stripplot(imp_chiif, chii_f~.imp, pch=20, cex=2)
+
+#regression on imputed dataset 
+fit_chiif <- with(imp_chiif, lm(chii_f ~ sport + npavas + nphipscl + npwmr + Group_de + sport + csparCTE + CTEStage + PathFTD + npadnc + nppath + npbraak + PathAD + cod + AT8_total + apoe_de + apoe + Group + CTE + PathLBD + agedeath + npftdtau + nplbod + nparter + npold + npold1 + npold2 + npold3 + npold4 + npamy + npdiff + npneur + DementiaHx + totyrs + AFE + Year))
+
+#pools regressions. 
+pool_fit_chiif <- pool(fit_chiif)
+
+print("chii_f")
+pool_fit_chiif
+summary(pool_fit_chiif)
+
+```
+
+
+
+```{r}
+#"Mammillary body", "Insula", "Nucleus Accumbens", "Caduate", "Putamen", "Substantia Innominata", "Optic nerve", "Inferior Frontal Cortex", "Globus Pallidus", "Thalamus", "Cerebellum", "Superior Frontal Cortex", "Motor Cortex", "Calcarine Cortex", "SN", "Anterior Temporal", "Inferior Parital Cortex", "Superior Temporal", "Ent cortex", "Amygdala", "LC", "Hip CA1", "Hip CA2/3", "Hip CA4", "Dorsolateral Frontal Cortex"
+```

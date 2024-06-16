@@ -1,0 +1,78 @@
+
+```{r, include=FALSE}
+library(MASS)
+set.seed(123)
+```
+
+chii_f
+```{r, include=FALSE}
+merged_meta <- readRDS("/restricted/projectnb/cteseq/jrose/meta_imputation/merged_meta.rds")
+#SLI-85 has conflicting CTEStage and Group info. CTEStage 2 but Group 3
+#K-0018 CTEStage 3 but Group 2
+#SLI-116 is CTEStage 1 but Group 1
+#cte_test <- subset(merged_meta, SampleName %in% c("SLI-85", "K-0018", "SLI-116"), select = c(SampleName, CTEStage, Group))
+#cte_test <- subset(merged_meta, CTEStage %in% c(3, 4) & Group %in% c(1, 2), select = c(SampleName, CTEStage, Group))
+
+chiif_meta <- subset(merged_meta, select = c("SampleName", "chii_f", "sport", "npavas", "nphipscl", "npwmr", "ParknismHx", 
+                                             "Group_de", "npadnc", "nppath", "npbraak", "PathAD", "AT8_total", 
+                                             "apoe_de", "apoe", "PathLBD", "agedeath", "npftdtau", "nparter", "npamy", "npdiff",
+                                             "npneur", "DementiaHx", "totyrs", "AFE", "Year"))
+
+#complete cases 
+cc_meta_chiif <- na.omit(chiif_meta)
+
+rownames(cc_meta_chiif) <- cc_meta_chiif$SampleName
+data_chiif <- cc_meta_chiif[,2:ncol(cc_meta_chiif)]
+chiif_n <- nrow(data_chiif)
+chiif_model_full <- lm(chii_f ~ ., data = data_chiif)
+chiif_model_null <- lm(chii_f ~ 1, data = data_chiif)
+
+#Step models
+#stepAIC is from library "MASS"
+#step_chiif_AIC <- stepAIC(chiif_model_full, direction="both")
+#step_chiif_BIC <- stepAIC(chiif_model_full, direction="both", k = log(chiif_n))
+
+#AIC penalization for number of predictors is 2. AIC = 2K - 2ln(L),
+#BIC is more strict, penalizing by log(n)K instead of 2K. 
+chiif_AIC <- step(chiif_model_full, scope = list(lower = chiif_model_null, upper = chiif_model_full),direction = "both", k = 2)
+chiif_BIC <- step(chiif_model_full, scope = list(lower = chiif_model_null, upper = chiif_model_full),direction = "both", k = log(chiif_n))
+
+
+```
+
+CTEStage
+```{r, include=FALSE}
+
+cte_meta <- subset(merged_meta, select = c("SampleName", "CTEStage", "chii_f", "sport", "npavas", "nphipscl", "npwmr", "ParknismHx", 
+                                             "npadnc", "nppath", "npbraak", "PathAD", "AT8_total", 
+                                             "apoe_de", "apoe", "PathLBD", "agedeath", "npftdtau", "nparter", "npamy", "npdiff",
+                                             "npneur", "DementiaHx", "totyrs", "AFE", "Year"))
+
+cte_meta$CTEStage <- as.numeric(cte_meta$CTEStage)
+
+#complete cases
+cc_meta_cte <- na.omit(cte_meta)
+
+rownames(cc_meta_cte) <- cc_meta_cte$SampleName
+data_cte <- cc_meta_cte[,2:ncol(cc_meta_cte)]
+cte_n <- nrow(data_cte)
+cte_model_full <- lm(CTEStage ~ ., data = data_cte)
+cte_model_null <- lm(CTEStage ~ 1, data = data_cte)
+
+#Step models
+#stepAIC is from library "MASS"
+#step_cte_AIC <- stepAIC(cte_model_full, direction="both")
+#step_cte_BIC <- stepAIC(cte_model_full, direction="both", k = log(cte_n))
+
+#AIC penalization for number of predictors is 2. AIC = 2K - 2ln(L),
+#BIC is more strict, penalizing by log(n)K instead of 2K. 
+cte_AIC <- step(cte_model_full, scope = list(lower = cte_model_null, upper = cte_model_full),direction = "both", k = 2)
+cte_BIC <- step(cte_model_full, scope = list(lower = cte_model_null, upper = cte_model_full),direction = "both", k = log(cte_n))
+
+
+
+```
+
+
+#chiif_meta <- subset(merged_meta, select = c("SampleName", "chii_f", "sport", "npavas", "nphipscl", "npwmr", "ParknismHx", "Group_de", "CTEStage", "npadnc", "nppath", "npbraak", "PathAD", "AT8_total", "apoe_de", "apoe", "Group", "CTE", "PathLBD", "agedeath", "npftdtau", "nplbod", "nparter", "npold", "npold1", "npold2", "npold3", "npold4", "npamy", "npdiff", "npneur", "DementiaHx", "totyrs", "AFE", "Year", "Mammillary body", "Insula", "Nucleus Accumbens", "Caduate", "Putamen", "Substantia Innominata", "Optic nerve", "Inferior Frontal Cortex", "Globus Pallidus", "Thalamus", "Cerebellum", "Superior Frontal Cortex", "Motor Cortex", "Calcarine Cortex", "SN", "Anterior Temporal", "Inferior Parital Cortex", "Superior Temporal", "Ent cortex", "Amygdala", "LC", "Hip CA1", "Hip CA2/3", "Hip CA4", "Dorsolateral Frontal Cortex"))
+# , "Mammillary body", "Insula", "Nucleus Accumbens", "Caduate", "Putamen", "Substantia Innominata", "Optic nerve", "Inferior Frontal Cortex", "Globus Pallidus", "Thalamus", "Cerebellum", "Superior Frontal Cortex", "Motor Cortex", "Calcarine Cortex", "SN", "Anterior Temporal", "Inferior Parital Cortex", "Superior Temporal", "Ent cortex", "Amygdala", "LC", "Hip CA1", "Hip CA2/3", "Hip CA4", "Dorsolateral Frontal Cortex"))
