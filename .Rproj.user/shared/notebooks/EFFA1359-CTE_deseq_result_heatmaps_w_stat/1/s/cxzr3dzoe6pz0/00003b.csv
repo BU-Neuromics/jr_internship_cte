@@ -1,8 +1,0 @@
-"0","for (i in filtered_names) {"
-"0","  paletteLength <- 50"
-"0","  colors <- colorRampPalette(c(""yellow"", ""white"", ""blue""))(paletteLength)"
-"0","  hm_breaks <- c(seq(min(heatmap_list[[i]]), 0, length.out=ceiling(paletteLength/2) + 1), "
-"0","              seq(max(heatmap_list[[i]])/paletteLength, max(heatmap_list[[i]]), length.out=floor(paletteLength/2)))"
-"0",""
-"0","  pheatmap(heatmap_list[[i]], cluster_rows = TRUE, cluster_cols = TRUE, color = colors, breaks = hm_breaks, main = paste(""Heatmap of significant (0.05) genes from "", i))"
-"0","}"

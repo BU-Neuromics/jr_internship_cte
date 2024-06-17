@@ -1,6 +1,0 @@
-"0","#Filtering out NA values on set design columns"
-"0","merged_meta <- subset(merged_meta, !is.na(merged_meta$agedeath))"
-"0","merged_meta <- subset(merged_meta, !is.na(merged_meta$RIN))"
-"0","#Filtering counts to only contain Core_ID (columns in counts) in the merged_AT8 df"
-"0","#counts_filtered <- counts[, names(counts) %in% merged_AT8$Core_ID]"
-"0","rounded <- round(filtered_counts)"

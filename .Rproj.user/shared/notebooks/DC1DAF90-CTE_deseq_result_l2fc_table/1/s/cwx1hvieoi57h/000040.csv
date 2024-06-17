@@ -1,9 +1,0 @@
-"0","lapply("
-"0","  comb_res_names,"
-"0","  function(result_name) {"
-"0","    assign(result_name, as_tibble(comb_results_05[[result_name]], rownames = ""ENSGID""), envir = .GlobalEnv"
-"0","           )"
-"0","  }"
-"0",")"
-"1","[[1]]
-"

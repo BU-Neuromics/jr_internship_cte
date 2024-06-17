@@ -1,3 +1,0 @@
-"0","#heatmaps"
-"0","DimHeatmap(obj, dims = 1, cells = 500, balanced = TRUE)"
-"2","Warning: Requested number is larger than the number of available items (179). Setting to 179."

@@ -1,7 +1,0 @@
-"0","for (i in seq_along(all_results)){"
-"0","  #all_results[[i]]$rank <- sign(all_results[[i]]$log2FoldChange)*(-log10(all_results[[i]]$pval))"
-"0","  all_results[[i]] <- subset(all_results[[i]], select = -c(""log2FoldChange"", ""pval""))"
-"0","}"
-"2","Error in -c(""log2FoldChange"", ""pval"") : 
-  invalid argument to unary operator
-"

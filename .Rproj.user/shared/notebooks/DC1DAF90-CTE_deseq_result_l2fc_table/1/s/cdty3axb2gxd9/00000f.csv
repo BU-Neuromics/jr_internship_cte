@@ -1,7 +1,0 @@
-"0","library(DESeq2)"
-"0","library(dplyr)"
-"0","library(biomaRt)"
-"0","library(tidyverse)"
-"0",""
-"0","combined_res_obj <- c(categorical_deseq_results, continuous_deseq_results)"
-"0","comb_res_names <- names(combined_res_obj)"

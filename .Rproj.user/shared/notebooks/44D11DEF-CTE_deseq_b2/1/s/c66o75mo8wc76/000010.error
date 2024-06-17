@@ -1,1 +1,0 @@
-{"frames":[],"message":"Error in mclapply(col_continuous, function(col_name) { : \n  could not find function \"mclapply\"\n"}
