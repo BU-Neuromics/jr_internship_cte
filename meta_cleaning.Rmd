@@ -11,7 +11,7 @@ Data import/prep
 #SLI-116 is CTEStage 1 but Group 1
 
 #!!!File import/Prep!!!
-ca1_meta <- read_excel("/restricted/projectnb/cteseq/jrose/meta_imputation/Multiregion AT8 densities.xlsx")
+ca1_meta <- read_excel("/restricted/projectnb/cteseq/jrose/Multiregion AT8 densities.xlsx")
 csv_meta <- read.csv("/restricted/projectnb/cteseq/projects/CTE_data_processing/all_meta.csv")
 counts <- read.csv("/restricted/projectnb/cteseq/projects/CTE_data_processing/all_counts.csv")
 AT8_ex_data <- read.csv("/restricted/projectnb/cteseq/jrose/cte_DLFCWSAT8.csv")[ ,2:3]
@@ -135,6 +135,6 @@ merged_meta$npold3 <- as.factor(merged_meta$npold3)
 merged_meta$npold4 <- as.factor(merged_meta$npold4)
 
 
-saveRDS(merged_meta, "/restricted/projectnb/cteseq/jrose/meta_imputation/merged_meta.rds")
+saveRDS(merged_meta, "/restricted/projectnb/cteseq/jrose/merged_meta.rds")
 
 ```
